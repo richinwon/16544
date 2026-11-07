@@ -5,6 +5,7 @@ import {
   Camera, 
   FileText, 
   PieChart, 
+  Coins,
   Info 
 } from 'lucide-react';
 
@@ -20,6 +21,7 @@ export const BottomNavigation: React.FC = () => {
     { screen: 2, label: '영수증 촬영', icon: Camera },
     { screen: 3, label: '구매목록', icon: FileText },
     { screen: 4, label: '면세 리포트', icon: PieChart },
+    { screen: 6, label: '환율계산기', icon: Coins },
     { screen: 5, label: '환급 가이드', icon: Info },
   ];
 

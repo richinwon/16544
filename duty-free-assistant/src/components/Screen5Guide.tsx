@@ -6,14 +6,12 @@ import {
   Plane, 
   CreditCard, 
   FileCheck, 
-  Stamp,
-  AlertCircle
+  Stamp
 } from 'lucide-react';
 
 export const Screen5Guide: React.FC = () => {
   const { setCurrentScreen } = useApp();
 
-  // 요구사항 4: PI VAT 박스가 가장 첫 번째(맨 위)에 오도록 순서 변경
   const refundPlatforms = [
     {
       name: 'PI VAT / 일본 면세 제도',
@@ -45,19 +43,19 @@ export const Screen5Guide: React.FC = () => {
     {
       step: '01',
       title: '매장에서 택스프리 요청',
-      desc: '물품 결제 시 여권을 제시하고 Tax Free 서류 및 바코드 영수증을 수령합니다.',
+      desc: '물품 결제 시 여권을 제시하고 환급 신청 서류 작성 또는 환급 영수증(또는 바코드 영수증) 등을 수령합니다.',
       icon: CreditCard,
     },
     {
       step: '02',
-      title: '출국 공항 세관 확인 (스탬프/키오스크)',
-      desc: '물품을 부치기 전(위탁수하물 전) 세관 검사대나 디지털 검증 키오스크에서 영수증 바코드를 스캔합니다.',
+      title: '출국 공항 세관 확인',
+      desc: '위탁 수하물로 보내기 전 세관 검사대나 디지털 검증 키오스크를 통해 면세 내역과 물품을 확인합니다.',
       icon: Stamp,
     },
     {
       step: '03',
       title: '환급 창구 방문 또는 카드 환급',
-      desc: '공항 내 환급 데스크에서 현금 수령 또는 환급 우체통에 서류를 투입해 신용카드로 환급받습니다.',
+      desc: '공항 내 환급 데스크(또는 세관 검사대)에서 현금 수령, 신용카드 환급 등의 수단으로 환급받습니다.',
       icon: FileCheck,
     },
   ];
@@ -73,7 +71,7 @@ export const Screen5Guide: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> 홈으로
         </button>
         <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
-          해외 사후면세(Tax Free) 가이드
+          해외 사후 면세(Tax Free) 가이드
         </h2>
         <div className="w-10"></div>
       </div>
@@ -124,10 +122,9 @@ export const Screen5Guide: React.FC = () => {
       </div>
 
       {/* Warning Tip */}
-      <div className="p-4 rounded-3xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+      <div className="p-4 rounded-3xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50">
         <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
-          <strong className="font-bold">주의사항:</strong> 액체류가 아닌 고가 명품은 세관에서 실물 제시를 요구할 수 있으므로, 세관 확인 전에 위탁 수하물로 부치지 마세요.
+          <strong className="font-bold">주의사항:</strong> 국가별 환급 여부, 환급 방식 및 기준 금액은 현지 정책에 따라 변동될 수 있으니 출국 전 현지 상황과 법규를 꼭 확인하세요!
         </div>
       </div>
 

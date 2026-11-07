@@ -52,6 +52,11 @@ export function calculateDuty(items: ProductItem[]): DutyCalculationResult {
   const categoryAmountMap: Partial<Record<ProductCategory, number>> = {};
 
   items.forEach(item => {
+    // excludedFromDuty 체크 시 또는 카테고리가 '음식점'/'교통비'인 경우 면세 한도 및 과세 산출에서 완전히 제외
+    if (item.excludedFromDuty || item.category === 'restaurant' || item.category === 'transportation') {
+      return;
+    }
+
     if (item.category === 'liquor') {
       liquorBottles += item.liquorBottles || 1;
       liquorUSD += item.priceUSD;

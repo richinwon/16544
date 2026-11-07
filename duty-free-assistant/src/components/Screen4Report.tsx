@@ -309,8 +309,8 @@ export const Screen4Report: React.FC = () => {
 
           {/* Tax difference summary */}
           <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 flex items-center justify-between text-xs">
-            <span className="text-gray-600 dark:text-gray-300">자진 신고로 절약되는 금액:</span>
-            <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+            <span className="font-bold text-gray-800 dark:text-gray-100">자진 신고로 절약되는 금액:</span>
+            <span className="font-black text-sm text-emerald-600 dark:text-emerald-400">
               +{convertUSDToKRW(duty.unreportedPenaltyTaxUSD - duty.voluntaryTaxUSD).toLocaleString()}원 절약!
             </span>
           </div>

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import type { Receipt, ProductItem, ProductCategory } from '../types';
+import type { Receipt, ProductItem } from '../types';
 import { generateFolderName } from '../types';
 import { 
   Camera, 
@@ -12,9 +12,10 @@ import {
   Layers,
   MapPin
 } from 'lucide-react';
+import { ManualReceiptModal } from './ManualReceiptModal';
 
 export const Screen2Camera: React.FC = () => {
-  const { setCurrentScreen, addReceipt, convertCurrencyToUSD } = useApp();
+  const { setCurrentScreen, addReceipt } = useApp();
   
   const [isContinuousMode, setIsContinuousMode] = useState(false);
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
@@ -25,16 +26,10 @@ export const Screen2Camera: React.FC = () => {
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
 
-  // Manual & location state
+  // Manual & location state for trip info
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
   const [manualCountry, setManualCountry] = useState('일본');
   const [manualCity, setManualCity] = useState('도쿄');
-  const [manualStore, setManualStore] = useState('');
-  const [manualItemName, setManualItemName] = useState('');
-  const [manualCategory, setManualCategory] = useState<ProductCategory>('cosmetics_general');
-  const [manualPriceLocal, setManualPriceLocal] = useState('');
-  const [manualTaxLocal, setManualTaxLocal] = useState('');
-  const [manualCurrency, setManualCurrency] = useState<'USD' | 'KRW' | 'JPY' | 'EUR'>('JPY');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -132,50 +127,6 @@ export const Screen2Camera: React.FC = () => {
         setCurrentScreen(3);
       }
     }, 1500);
-  };
-
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualItemName || !manualPriceLocal) {
-      alert('품목명과 결제 금액을 입력해 주세요.');
-      return;
-    }
-
-    const price = parseFloat(manualPriceLocal) || 0;
-    const tax = parseFloat(manualTaxLocal) || 0;
-    const priceUSD = convertCurrencyToUSD(price, manualCurrency);
-    const autoFolder = generateFolderName(manualDate, manualCountry, manualCity);
-
-    const newItem: ProductItem = {
-      id: 'manual-item-' + Date.now(),
-      name: manualItemName,
-      category: manualCategory,
-      priceLocal: price,
-      currency: manualCurrency,
-      priceUSD: priceUSD,
-      taxLocal: tax,
-      liquorBottles: manualCategory === 'liquor' ? 1 : undefined,
-      tobaccoPacks: manualCategory === 'tobacco' ? 10 : undefined,
-      perfumeMl: manualCategory === 'perfume' ? 100 : undefined,
-    };
-
-    const newReceipt: Receipt = {
-      id: 'manual-receipt-' + Date.now(),
-      date: manualDate,
-      country: manualCountry,
-      city: manualCity,
-      folderName: autoFolder,
-      storeName: manualStore || `${manualCity} 직접 입력 상점`,
-      imageUrl: capturedImages[0] || undefined,
-      items: [newItem],
-      totalUSD: priceUSD,
-      createdAt: Date.now()
-    };
-
-    addReceipt(newReceipt);
-    setShowManualModal(false);
-    alert(`영수증이 여행 폴더 [${autoFolder}]에 성공적으로 등록되었습니다.`);
-    setCurrentScreen(3);
   };
 
   // Preview folder name
@@ -409,170 +360,12 @@ export const Screen2Camera: React.FC = () => {
         </div>
       )}
 
-      {/* Modal 2: 수기 입력 모달 */}
-      {showManualModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="font-extrabold text-base text-gray-900 dark:text-white flex items-center gap-1.5">
-                  📝 영수증 수기 등록 모드
-                </h3>
-                <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
-                  저장 폴더: {previewFolder}
-                </span>
-              </div>
-              <button
-                onClick={() => setShowManualModal(false)}
-                className="p-1 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleManualSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    국가명
-                  </label>
-                  <input
-                    type="text"
-                    value={manualCountry}
-                    onChange={(e) => setManualCountry(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    도시명
-                  </label>
-                  <input
-                    type="text"
-                    value={manualCity}
-                    onChange={(e) => setManualCity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  구매 날짜
-                </label>
-                <input
-                  type="date"
-                  value={manualDate}
-                  onChange={(e) => setManualDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  구매처 / 상점명
-                </label>
-                <input
-                  type="text"
-                  placeholder="예: 돈키호테 신주쿠점"
-                  value={manualStore}
-                  onChange={(e) => setManualStore(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  품목명 *
-                </label>
-                <input
-                  type="text"
-                  placeholder="예: 나이키 운동화"
-                  value={manualItemName}
-                  onChange={(e) => setManualItemName(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  품목 카테고리 (세율 적용)
-                </label>
-                <select
-                  value={manualCategory}
-                  onChange={(e) => setManualCategory(e.target.value as ProductCategory)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                >
-                  <option value="cosmetics_general">화장품 / 일반물품 (15%)</option>
-                  <option value="clothing_shoes">의류 / 신발 (18%)</option>
-                  <option value="fur">모피제품 (19%)</option>
-                  <option value="bags">가방 / 핸드백 (20%)</option>
-                  <option value="deer_antler">녹용 (21%)</option>
-                  <option value="liquor">주류 (별도 한도 2병/$400)</option>
-                  <option value="tobacco">담배 (별도 한도 1보루)</option>
-                  <option value="perfume">향수 (별도 한도 100ml)</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    결제 통화
-                  </label>
-                  <select
-                    value={manualCurrency}
-                    onChange={(e) => setManualCurrency(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                  >
-                    <option value="USD">USD ($)</option>
-                    <option value="JPY">JPY (¥)</option>
-                    <option value="KRW">KRW (원)</option>
-                    <option value="EUR">EUR (€)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    결제 금액 *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="0"
-                    value={manualPriceLocal}
-                    onChange={(e) => setManualPriceLocal(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-bold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  현지 세금(VAT) 포함액
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="0 (사후 환급용)"
-                  value={manualTaxLocal}
-                  onChange={(e) => setManualTaxLocal(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md"
-                >
-                  영수증 등록 완료
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modal 2: 수기 입력 모달 (공통 컴포넌트) */}
+      <ManualReceiptModal 
+        isOpen={showManualModal} 
+        onClose={() => setShowManualModal(false)} 
+        onSuccess={() => setCurrentScreen(3)}
+      />
     </div>
   );
 };

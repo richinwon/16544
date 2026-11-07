@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import type { Receipt, ProductItem, ExchangeRates } from '../types';
+import { loadFirebaseReceipts, saveFirebaseReceipt, deleteFirebaseReceipt } from '../services/firebaseService';
+import { isFirebaseConfigured } from '../firebase';
 import { generateFolderName } from '../types';
 
 interface AppContextType {
@@ -16,6 +18,8 @@ interface AppContextType {
   updateReceipt: (receipt: Receipt) => void;
   deleteReceipt: (id: string) => void;
   addItemToReceipt: (receiptId: string, item: ProductItem) => void;
+  updateItemInReceipt: (receiptId: string, item: ProductItem) => void;
+  toggleExcludeItem: (receiptId: string, itemId: string) => void;
   deleteItemFromReceipt: (receiptId: string, itemId: string) => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
@@ -171,6 +175,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('dutyfree_receipts', JSON.stringify(receipts));
   }, [receipts]);
 
+  // Firebase 연결 시 유저 변경 시 Firestore에서 영수증 로드
+  useEffect(() => {
+    if (username && isFirebaseConfigured) {
+      loadFirebaseReceipts(username).then((remoteReceipts) => {
+        if (remoteReceipts && remoteReceipts.length > 0) {
+          setReceipts(remoteReceipts);
+        } else if (receipts.length > 0) {
+          // 로컬 영수증이 있으면 첫 Firebase 업로드 동기화
+          receipts.forEach(r => saveFirebaseReceipt(username, r));
+        }
+      });
+    }
+  }, [username]);
+
+
   // Save exchange rates
   useEffect(() => {
     localStorage.setItem('dutyfree_rates', JSON.stringify(exchangeRates));
@@ -230,14 +249,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (receipt.folderName) {
       setSelectedFolder(receipt.folderName);
     }
+    if (username && isFirebaseConfigured) {
+      saveFirebaseReceipt(username, receipt);
+    }
   };
 
   const updateReceipt = (updated: Receipt) => {
     setReceipts(prev => prev.map(r => r.id === updated.id ? updated : r));
+    if (username && isFirebaseConfigured) {
+      saveFirebaseReceipt(username, updated);
+    }
   };
 
   const deleteReceipt = (id: string) => {
     setReceipts(prev => prev.filter(r => r.id !== id));
+    if (username && isFirebaseConfigured) {
+      deleteFirebaseReceipt(username, id);
+    }
   };
 
   const addItemToReceipt = (receiptId: string, item: ProductItem) => {
@@ -249,6 +277,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...r,
           items: updatedItems,
           totalUSD: parseFloat(newTotal.toFixed(2))
+        };
+      }
+      return r;
+    }));
+  };
+
+  const updateItemInReceipt = (receiptId: string, updatedItem: ProductItem) => {
+    setReceipts(prev => prev.map(r => {
+      if (r.id === receiptId) {
+        const updatedItems = r.items.map(it => it.id === updatedItem.id ? updatedItem : it);
+        const newTotal = updatedItems.reduce((acc, cur) => acc + cur.priceUSD, 0);
+        return {
+          ...r,
+          items: updatedItems,
+          totalUSD: parseFloat(newTotal.toFixed(2))
+        };
+      }
+      return r;
+    }));
+  };
+
+  const toggleExcludeItem = (receiptId: string, itemId: string) => {
+    setReceipts(prev => prev.map(r => {
+      if (r.id === receiptId) {
+        const updatedItems = r.items.map(it => {
+          if (it.id === itemId) {
+            return { ...it, excludedFromDuty: !it.excludedFromDuty };
+          }
+          return it;
+        });
+        return {
+          ...r,
+          items: updatedItems,
         };
       }
       return r;
@@ -286,6 +347,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateReceipt,
         deleteReceipt,
         addItemToReceipt,
+        updateItemInReceipt,
+        toggleExcludeItem,
         deleteItemFromReceipt,
         isDarkMode,
         toggleDarkMode,
