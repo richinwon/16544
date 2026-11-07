@@ -134,7 +134,9 @@ export const Screen1Dashboard: React.FC = () => {
                 : 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
             }`}>
               {duty.isOverLimit ? <ShieldAlert className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-              {duty.isOverLimit ? `$${duty.taxableUSD} 초과` : '한도 내 안전'}
+              {duty.isOverLimit 
+                ? `$${duty.taxableUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 초과` 
+                : '한도 내 안전'}
             </div>
 
             {/* Settings Gear Button to customize summary box background */}
@@ -157,9 +159,11 @@ export const Screen1Dashboard: React.FC = () => {
           className="cursor-pointer flex items-center justify-between py-1"
         >
           <div>
-            <span className="text-xs text-blue-200/90 font-medium">일반 면세 한도 소진 현황 ($800)</span>
+            <span className="text-xs text-blue-200/90 font-medium">일반 면세 한도 소진 현황 ($800.00)</span>
             <div className="flex items-baseline gap-1.5 mt-1">
-              <span className="text-3xl font-black tracking-tight">${duty.totalGeneralUSD.toLocaleString()}</span>
+              <span className="text-3xl font-black tracking-tight">
+                ${duty.totalGeneralUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
               <span className="text-xs text-blue-200 font-normal">/ $800.00</span>
             </div>
             <p className="text-xs text-blue-300/90 mt-0.5">
@@ -187,7 +191,11 @@ export const Screen1Dashboard: React.FC = () => {
           </div>
           <div className="flex justify-between text-[11px] text-blue-200/80 mt-1 font-medium">
             <span>{rawPercent}%</span>
-            <span>{duty.isOverLimit ? '과세 대상 발생' : `$${(800 - duty.totalGeneralUSD).toFixed(1)} 잔여`}</span>
+            <span>
+              {duty.isOverLimit 
+                ? '과세 대상 발생' 
+                : `$${Math.max(0, 800 - duty.totalGeneralUSD).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 잔여`}
+            </span>
           </div>
         </div>
 
@@ -324,7 +332,9 @@ export const Screen1Dashboard: React.FC = () => {
                   <p className="text-[11px] text-gray-400">{r.date} · 품목 {r.items.length}개</p>
                 </div>
                 <div className="text-right">
-                  <span className="text-sm font-bold text-gray-900 dark:text-white">${r.totalUSD.toFixed(1)}</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">
+                    ${r.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                   <p className="text-[10px] text-gray-400">≈ {convertUSDToKRW(r.totalUSD).toLocaleString()}원</p>
                 </div>
               </div>

@@ -26,6 +26,14 @@ export const Screen4Report: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // 외화 금액 포맷팅 헬퍼 (세 자리 콤마 및 소수 둘째 자리까지 표시)
+  const formatUSD = (val: number): string => {
+    return Number(val || 0).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   // Calculate duty based strictly on selectedFolder
   const allFilteredItems = filteredReceipts.flatMap(r => r.items);
   const duty = calculateDuty(allFilteredItems);
@@ -58,7 +66,7 @@ export const Screen4Report: React.FC = () => {
   };
 
   const handleShare = async () => {
-    const shareText = `[면세비서] 여행 면세 정산 리포트 (${selectedFolder})\n- 총 일반 구매액: $${duty.totalGeneralUSD} (${convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원)\n- 과세 대상 금액: $${duty.taxableUSD}\n- 자진 신고 시 세액: $${duty.voluntaryTaxUSD} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)\n- 미신고 적발 시 추징금: $${duty.unreportedPenaltyTaxUSD} (${convertUSDToKRW(duty.unreportedPenaltyTaxUSD).toLocaleString()}원)`;
+    const shareText = `[면세비서] 여행 면세 정산 리포트 (${selectedFolder})\n- 총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} (${convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원)\n- 과세 대상 금액: $${formatUSD(duty.taxableUSD)}\n- 자진 신고 시 세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)\n- 미신고 적발 시 추징금: $${formatUSD(duty.unreportedPenaltyTaxUSD)} (${convertUSDToKRW(duty.unreportedPenaltyTaxUSD).toLocaleString()}원)`;
 
     if (navigator.share) {
       try {
@@ -104,10 +112,10 @@ export const Screen4Report: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 border border-gray-100 dark:border-gray-700 shadow-xs space-y-3">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-xs font-bold text-gray-400">기본면세한도($800) 현황</span>
+              <span className="text-xs font-bold text-gray-400">기본면세한도($800.00) 현황</span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-black text-gray-900 dark:text-white">
-                  ${duty.totalGeneralUSD.toFixed(1)}
+                  ${formatUSD(duty.totalGeneralUSD)}
                 </span>
                 <span className="text-xs text-gray-400">/ $800.00 USD</span>
               </div>
@@ -142,8 +150,8 @@ export const Screen4Report: React.FC = () => {
               <span>{rawPercent}%</span>
               <span className="font-bold">
                 {duty.isOverLimit 
-                  ? `초과 금액: $${duty.taxableUSD.toFixed(1)}` 
-                  : `잔여 한도: $${(800 - duty.totalGeneralUSD).toFixed(1)}`}
+                  ? `초과 금액: $${formatUSD(duty.taxableUSD)}` 
+                  : `잔여 한도: $${formatUSD(Math.max(0, 800 - duty.totalGeneralUSD))}`}
               </span>
             </div>
           </div>
@@ -153,7 +161,7 @@ export const Screen4Report: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 border border-gray-100 dark:border-gray-700 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-gray-500">별도 면세 한도 품목 현황</h3>
-            <span className="text-[11px] text-gray-400">기본 $800에 합산되지 않음</span>
+            <span className="text-[11px] text-gray-400">기본 $800.00에 합산되지 않음</span>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
@@ -166,7 +174,7 @@ export const Screen4Report: React.FC = () => {
               <Wine className={`w-5 h-5 mx-auto mb-1 ${duty.liquor.isOver ? 'text-rose-500' : 'text-gray-600 dark:text-gray-300'}`} />
               <p className="text-[11px] font-bold text-gray-800 dark:text-gray-200">주류</p>
               <p className="text-xs font-extrabold text-gray-900 dark:text-white mt-0.5">
-                {duty.liquor.totalBottles}병 / ${duty.liquor.totalUSD}
+                {duty.liquor.totalBottles}병 / ${formatUSD(duty.liquor.totalUSD)}
               </p>
               <span className={`inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${
                 duty.liquor.isOver 
@@ -175,7 +183,7 @@ export const Screen4Report: React.FC = () => {
               }`}>
                 {duty.liquor.isOver ? '초과' : '적합'}
               </span>
-              <p className="text-[9px] text-gray-400 mt-1">2병 & $400 이하</p>
+              <p className="text-[9px] text-gray-400 mt-1">2병 & $400.00 이하</p>
             </div>
 
             {/* Tobacco */}
@@ -241,7 +249,7 @@ export const Screen4Report: React.FC = () => {
             </div>
             <div className="flex justify-between items-center mt-1">
               <p className="text-[11px] text-gray-400">
-                산출 공식: 과세 대상 금액(${(duty.taxableUSD).toFixed(1)}) × 품목별 간이과세율
+                산출 공식: 과세 대상 금액(${formatUSD(duty.taxableUSD)}) × 품목별 간이과세율
               </p>
               {/* 과세대상 스타일: 과세금액 발생 시 미신고 적발과 동일한 강조 색상/디자인, 미발생 시 기존 유지 */}
               <span className={`text-xs px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-colors ${
@@ -249,7 +257,7 @@ export const Screen4Report: React.FC = () => {
                   ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xs'
                   : 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300'
               }`}>
-                과세 대상: ${duty.taxableUSD.toFixed(1)}
+                과세 대상: ${formatUSD(duty.taxableUSD)}
               </span>
             </div>
           </div>
@@ -266,14 +274,14 @@ export const Screen4Report: React.FC = () => {
               </div>
               <div>
                 <p className="text-xl font-black text-blue-700 dark:text-blue-300">
-                  ${duty.voluntaryTaxUSD.toFixed(1)}
+                  ${formatUSD(duty.voluntaryTaxUSD)}
                 </p>
                 <p className="text-xs font-bold text-blue-900 dark:text-blue-200">
                   ≈ {convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원
                 </p>
               </div>
               <div className="text-[10px] text-gray-500 dark:text-gray-400 pt-1 border-t border-blue-200/50 dark:border-blue-900/50">
-                기본세액 ${duty.baseTaxUSD} × 0.7
+                기본세액 ${formatUSD(duty.baseTaxUSD)} × 0.7
               </div>
             </div>
 
@@ -288,14 +296,14 @@ export const Screen4Report: React.FC = () => {
               </div>
               <div>
                 <p className="text-xl font-black text-rose-700 dark:text-rose-300">
-                  ${duty.unreportedPenaltyTaxUSD.toFixed(1)}
+                  ${formatUSD(duty.unreportedPenaltyTaxUSD)}
                 </p>
                 <p className="text-xs font-bold text-rose-900 dark:text-rose-200">
                   ≈ {convertUSDToKRW(duty.unreportedPenaltyTaxUSD).toLocaleString()}원
                 </p>
               </div>
               <div className="text-[10px] text-gray-500 dark:text-gray-400 pt-1 border-t border-rose-200/50 dark:border-rose-900/50">
-                기본세액 ${duty.baseTaxUSD} × 1.4
+                기본세액 ${formatUSD(duty.baseTaxUSD)} × 1.4
               </div>
             </div>
           </div>
@@ -310,8 +318,12 @@ export const Screen4Report: React.FC = () => {
           {/* Tax difference summary */}
           <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 flex items-center justify-between text-xs">
             <span className="font-bold text-gray-800 dark:text-gray-100">자진 신고로 절약되는 금액:</span>
-            <span className="font-black text-sm text-emerald-600 dark:text-emerald-400">
-              +{convertUSDToKRW(duty.unreportedPenaltyTaxUSD - duty.voluntaryTaxUSD).toLocaleString()}원 절약!
+            <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-baseline gap-0.5">
+              <span>+</span>
+              <span className="text-[17px] font-black leading-none">
+                {convertUSDToKRW(duty.unreportedPenaltyTaxUSD - duty.voluntaryTaxUSD).toLocaleString()}
+              </span>
+              <span>원 절약!</span>
             </span>
           </div>
         </div>
@@ -364,7 +376,7 @@ export const Screen4Report: React.FC = () => {
             <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800 space-y-1.5 text-xs mb-4">
               <div className="flex justify-between">
                 <span className="text-gray-500">총 일반 구매액:</span>
-                <span className="font-bold text-gray-900 dark:text-white">${duty.totalGeneralUSD}</span>
+                <span className="font-bold text-gray-900 dark:text-white">${formatUSD(duty.totalGeneralUSD)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">기본 면세 한도:</span>
@@ -372,7 +384,7 @@ export const Screen4Report: React.FC = () => {
               </div>
               <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-800">
                 <span className="font-bold text-gray-700 dark:text-gray-300">과세 대상 금액:</span>
-                <span className="font-black text-blue-600 dark:text-blue-400">${duty.taxableUSD}</span>
+                <span className="font-black text-blue-600 dark:text-blue-400">${formatUSD(duty.taxableUSD)}</span>
               </div>
               {duty.totalGeneralUSD > 0 && (
                 <div className="text-[10px] text-gray-400">
@@ -389,7 +401,7 @@ export const Screen4Report: React.FC = () => {
 
               {duty.categoryDetails.length === 0 ? (
                 <div className="p-4 text-center text-xs text-gray-400 bg-gray-50 dark:bg-gray-900/40 rounded-2xl">
-                  면세 한도($800) 내이므로 산출된 세액이 없습니다.
+                  면세 한도($800.00) 내이므로 산출된 세액이 없습니다.
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -408,12 +420,12 @@ export const Screen4Report: React.FC = () => {
                       </div>
                       <div className="flex justify-between text-[11px] text-gray-500">
                         <span>구매액 / 과세배분:</span>
-                        <span>${detail.totalAmountUSD} ➔ ${detail.taxableAmountUSD}</span>
+                        <span>${formatUSD(detail.totalAmountUSD)} ➔ ${formatUSD(detail.taxableAmountUSD)}</span>
                       </div>
                       <div className="flex justify-between text-[11px] font-semibold text-gray-800 dark:text-gray-200 pt-0.5 border-t border-gray-200/60 dark:border-gray-800">
                         <span>산출세액:</span>
                         <span className="text-blue-600 dark:text-blue-400 font-bold">
-                          ${detail.calculatedTaxUSD} (≈ {convertUSDToKRW(detail.calculatedTaxUSD).toLocaleString()}원)
+                          ${formatUSD(detail.calculatedTaxUSD)} (≈ {convertUSDToKRW(detail.calculatedTaxUSD).toLocaleString()}원)
                         </span>
                       </div>
                     </div>
@@ -426,15 +438,15 @@ export const Screen4Report: React.FC = () => {
             <div className="p-3.5 rounded-2xl bg-blue-50/60 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 space-y-1.5 text-xs">
               <div className="flex justify-between font-bold text-blue-950 dark:text-blue-200">
                 <span>기본 산출 세액 합계:</span>
-                <span>${duty.baseTaxUSD}</span>
+                <span>${formatUSD(duty.baseTaxUSD)}</span>
               </div>
               <div className="flex justify-between text-blue-700 dark:text-blue-300 text-[11px]">
                 <span>자진 신고 (30% 감면):</span>
-                <span className="font-bold">${duty.voluntaryTaxUSD} ({convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)</span>
+                <span className="font-bold">${formatUSD(duty.voluntaryTaxUSD)} ({convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)</span>
               </div>
               <div className="flex justify-between text-rose-600 dark:text-rose-400 text-[11px]">
                 <span>미신고 적발 (40% 가산세):</span>
-                <span className="font-bold">${duty.unreportedPenaltyTaxUSD} ({convertUSDToKRW(duty.unreportedPenaltyTaxUSD).toLocaleString()}원)</span>
+                <span className="font-bold">${formatUSD(duty.unreportedPenaltyTaxUSD)} ({convertUSDToKRW(duty.unreportedPenaltyTaxUSD).toLocaleString()}원)</span>
               </div>
             </div>
 
