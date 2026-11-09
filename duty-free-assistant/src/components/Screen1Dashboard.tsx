@@ -90,18 +90,15 @@ export const Screen1Dashboard: React.FC = () => {
 
   return (
     <div className="p-4 space-y-4 pb-20">
-      {/* Top Header: 여행 폴더 선택 및 유저 환영 문구 (좌측 정렬) + 로그아웃 버튼 (우측 유지) */}
+      {/* Top Header: 홈 화면 좌측 상단 "반가워요~" 텍스트 표시 + 우측 로그아웃 버튼 유지 */}
       <div className="pt-2 space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex flex-col items-start gap-1">
-            <FolderSelect />
-            <h2 className="text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mt-0.5 text-left">
-              반가워요, <span className="text-blue-600 dark:text-blue-400">{username}</span>님! ✈️
-            </h2>
-          </div>
+          <h2 className="text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 text-left">
+            반가워요, <span className="text-blue-600 dark:text-blue-400">{username}</span>님! ✈️
+          </h2>
           <button
             onClick={logout}
-            className="self-start mt-1 px-3 py-1.5 rounded-2xl bg-gray-100 hover:bg-rose-50 dark:bg-gray-800 dark:hover:bg-rose-950/30 text-gray-600 hover:text-rose-600 dark:text-gray-300 dark:hover:text-rose-400 font-bold text-xs transition-colors shadow-xs flex items-center gap-1 shrink-0"
+            className="px-3 py-1.5 rounded-2xl bg-gray-100 hover:bg-rose-50 dark:bg-gray-800 dark:hover:bg-rose-950/30 text-gray-600 hover:text-rose-600 dark:text-gray-300 dark:hover:text-rose-400 font-bold text-xs transition-colors shadow-xs flex items-center gap-1 shrink-0"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>로그아웃</span>
@@ -127,12 +124,10 @@ export const Screen1Dashboard: React.FC = () => {
       <div 
         className={`relative overflow-hidden rounded-3xl ${currentPreset.className} text-white p-5 shadow-xl shadow-indigo-950/20 transition-colors duration-300`}
       >
-        {/* Top bar inside box: 폴더명 뱃지, status badge, and Settings Gear Icon */}
+        {/* Top bar inside box: 폴더 선택 박스 좌측 상단 배치, status badge, and Settings Gear Icon */}
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/10 text-white/90 font-medium">
-              {selectedFolder}
-            </span>
+            <FolderSelect />
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -169,7 +164,7 @@ export const Screen1Dashboard: React.FC = () => {
           className="cursor-pointer flex items-center justify-between py-1"
         >
           <div>
-            <span className="text-xs text-blue-200/90 font-medium">일반 면세 한도 소진 현황 ($800.00)</span>
+            <span className="text-xs text-blue-200/90 font-medium">일반 면세한도 소진현황</span>
             <div className="flex items-baseline gap-1.5 mt-1">
               <span className="text-3xl font-black tracking-tight">
                 ${duty.totalGeneralUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

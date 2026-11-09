@@ -43,6 +43,7 @@ export const Screen2Camera: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // 카메라 스트림 시작/종료 제어
   const startCamera = async () => {
@@ -297,18 +298,34 @@ export const Screen2Camera: React.FC = () => {
       {/* Camera Viewport / Upload Box */}
       <div 
         onClick={() => {
-          fileInputRef.current?.click();
+          if (isContinuousMode) {
+            startCamera();
+          } else {
+            cameraInputRef.current?.click();
+          }
         }}
         className="cursor-pointer border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-blue-500 rounded-3xl p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-gray-800/80 transition-all group"
       >
-        <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-md">
-          <Upload className="w-8 h-8" />
-        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isContinuousMode) {
+              startCamera();
+            } else {
+              cameraInputRef.current?.click();
+            }
+          }}
+          className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 group-hover:scale-110 active:scale-95 transition-transform shadow-md"
+          title={isContinuousMode ? "연속 촬영 카메라 시작" : "카메라 촬영"}
+        >
+          <Camera className="w-8 h-8" />
+        </button>
         <h3 className="text-sm font-bold text-gray-800 dark:text-white">
           {isContinuousMode ? '여러 장의 영수증 사진을 한 번에 선택하세요' : '영수증 사진을 선택하세요'}
         </h3>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          {isContinuousMode ? '여러 장의 영수증 이미지를 한 번에 선택하여 분석 목록에 추가합니다' : 'JPG, PNG 지원 · 상점명, 결제금액, 세금이 선명할수록 좋습니다'}
+          {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : '카메라 아이콘을 누르면 카메라가 실행됩니다'}
         </p>
         <button
           type="button"
@@ -319,8 +336,20 @@ export const Screen2Camera: React.FC = () => {
           className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
         >
           <Upload className="w-3.5 h-3.5" />
-          <span>{isContinuousMode ? '여러 파일 선택' : '파일선택'}</span>
+          <span>{isContinuousMode ? '여러파일선택' : '파일선택'}</span>
         </button>
+
+        {/* 단일 모드 카메라 촬영 input */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
+        {/* 파일 업로드 input (단일 / 다중 선택) */}
         <input
           ref={fileInputRef}
           type="file"

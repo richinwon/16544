@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { Receipt, ProductItem, ProductCategory } from '../types';
 import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER } from '../types';
@@ -21,7 +21,8 @@ import {
   Edit2, 
   Check, 
   AlertCircle,
-  Minus
+  Minus,
+  CheckCircle2
 } from 'lucide-react';
 
 // 국가별 사후환급 신청 가능한 최소 한도 금액 기준
@@ -113,6 +114,23 @@ export const Screen3List: React.FC = () => {
   const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false);
   const [isEditCurrDropdownOpen, setIsEditCurrDropdownOpen] = useState(false);
 
+  // 상단 슬라이드다운 Toast 알림 상태 (영수증 수기등록 창과 동일)
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'error' | 'success'>('error');
+
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToastMessage(msg);
+    setToastType(type);
+  };
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 2800);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
   const toggleFolderCollapse = (folderName: string) => {
     setCollapsedFolders(prev => ({
       ...prev,
@@ -122,7 +140,26 @@ export const Screen3List: React.FC = () => {
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetReceiptForAdd || !newItemName || !newItemPrice) return;
+    if (!newItemName.trim()) {
+      showToast('품목명을 입력해 주세요!');
+      return;
+    }
+    if (newItemCategory === 'perfume') {
+      if (!newItemPerfumeMl || newItemPerfumeMl <= 0) {
+        showToast('향수 용량(ml)을 올바르게 입력해 주세요!');
+        return;
+      }
+    } else {
+      if (!newItemQuantity || newItemQuantity < 1) {
+        showToast('수량을 1개 이상 입력해 주세요!');
+        return;
+      }
+    }
+    if (!newItemPrice || parseFloat(newItemPrice) <= 0) {
+      showToast('결제 금액을 올바르게 입력해 주세요!');
+      return;
+    }
+    if (!targetReceiptForAdd) return;
 
     const price = parseFloat(newItemPrice) || 0;
     const isTaxExcludedCategory = newItemCategory === 'restaurant' || newItemCategory === 'transportation';
@@ -135,7 +172,7 @@ export const Screen3List: React.FC = () => {
 
     const item: ProductItem = {
       id: 'item-' + Date.now(),
-      name: newItemName,
+      name: newItemName.trim(),
       category: newItemCategory,
       priceLocal: price,
       currency: newItemCurrency,
@@ -160,9 +197,9 @@ export const Screen3List: React.FC = () => {
     setTargetReceiptForAdd(null);
     setNewItemName('');
     setNewItemPrice('');
+    setNewItemTax('');
     setNewItemQuantity(1);
     setNewItemPerfumeMl(50);
-    setNewItemTax('');
   };
 
   // Export folder purchases to Excel-compatible CSV with UTF-8 BOM
@@ -429,27 +466,27 @@ export const Screen3List: React.FC = () => {
 
               {/* 우측: 예상 환급액 및 안내 문구 */}
               <div className="text-right flex flex-col items-end shrink-0">
-                <div className="flex items-center justify-end gap-1.5">
-                  <span className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 shrink-0">
+                <div className="flex items-center justify-end gap-1">
+                  <span className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
                     <Coins className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> 예상 환급액
                   </span>
                   {refundStatus.isUnknownOrNonRefundable && (
-                    <span className="text-[10px] font-bold text-rose-500 flex items-center gap-0.5 shrink-0">
+                    <span className="text-[10px] font-bold text-rose-500 flex items-center gap-0.5">
                       <AlertCircle className="w-3 h-3" />
                       사후환급여부 확인 필요
                     </span>
                   )}
-                  <span className={`text-xl sm:text-2xl font-black shrink-0 ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
-                    {refundStatus.amountStr}
-                  </span>
                 </div>
+                {/* 줄바꿈된 금액 표시부 */}
+                <span className={`text-xl sm:text-2xl font-black mt-0.5 ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                  {refundStatus.amountStr}
+                </span>
+                {/* 금액 아래쪽으로 위치한 안내 문구 */}
+                <p className="text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5">
+                  평균 환급 대행수수료를 차감한 예상 수령액입니다.
+                </p>
               </div>
             </div>
-
-            {/* 예상환급액 하단 "평균 환급~" 문구 왼쪽으로 이동하여 박스 밖으로 나가지 않도록 배치 */}
-            <p className="text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400 font-medium text-left">
-              평균 환급 대행수수료를 차감한 예상 수령액입니다.
-            </p>
           </div>
 
           {folders.length === 0 ? (
@@ -614,6 +651,7 @@ export const Screen3List: React.FC = () => {
                                   {/* 품목 정보 및 클릭 시 수정 모달 오픈 */}
                                   <div 
                                     onClick={() => {
+                                      setToastMessage(null);
                                       setEditingItemData({ receiptId: receipt.id, item });
                                       setEditName(item.name);
                                       setEditCategory(item.category);
@@ -668,7 +706,10 @@ export const Screen3List: React.FC = () => {
                             {/* Card Footer Actions */}
                             <div className="flex justify-between items-center pt-1 text-xs">
                               <button
-                                onClick={() => setTargetReceiptForAdd(receipt.id)}
+                                onClick={() => {
+                                  setToastMessage(null);
+                                  setTargetReceiptForAdd(receipt.id);
+                                }}
                                 className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-bold hover:underline text-[11px]"
                               >
                                 <Plus className="w-3 h-3" /> 품목 직접 추가
@@ -943,7 +984,25 @@ export const Screen3List: React.FC = () => {
       {/* Modal: Direct item add */}
       {targetReceiptForAdd && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
+            {/* 상단 슬라이드다운 커스텀 Toast 알림 컴포넌트 */}
+            {toastMessage && (
+              <div className="absolute top-3 left-4 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
+                <div className={`flex items-center gap-2 p-3 rounded-2xl shadow-xl border text-xs font-bold ${
+                  toastType === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/90 dark:text-emerald-200 dark:border-emerald-800'
+                    : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/90 dark:text-rose-200 dark:border-rose-800'
+                }`}>
+                  {toastType === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  )}
+                  <span className="flex-1 text-left leading-tight">{toastMessage}</span>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-extrabold text-base text-gray-900 dark:text-white">
                 품목 직접 추가
@@ -1182,7 +1241,25 @@ export const Screen3List: React.FC = () => {
       {/* Modal: Edit Existing Item (품목명, 품목분류, 금액, 세금 수정 기능) */}
       {editingItemData && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
+            {/* 상단 슬라이드다운 커스텀 Toast 알림 컴포넌트 */}
+            {toastMessage && (
+              <div className="absolute top-3 left-4 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
+                <div className={`flex items-center gap-2 p-3 rounded-2xl shadow-xl border text-xs font-bold ${
+                  toastType === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/90 dark:text-emerald-200 dark:border-emerald-800'
+                    : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/90 dark:text-rose-200 dark:border-rose-800'
+                }`}>
+                  {toastType === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  )}
+                  <span className="flex-1 text-left leading-tight">{toastMessage}</span>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-extrabold text-base text-gray-900 dark:text-white flex items-center gap-1.5">
                 <Edit2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -1199,7 +1276,25 @@ export const Screen3List: React.FC = () => {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!editName || !editPriceLocal) return;
+                if (!editName.trim()) {
+                  showToast('품목명을 입력해 주세요!');
+                  return;
+                }
+                if (editCategory === 'perfume') {
+                  if (!editPerfumeMl || editPerfumeMl <= 0) {
+                    showToast('향수 용량(ml)을 올바르게 입력해 주세요!');
+                    return;
+                  }
+                } else {
+                  if (!editQuantity || editQuantity < 1) {
+                    showToast('수량을 1개 이상 입력해 주세요!');
+                    return;
+                  }
+                }
+                if (!editPriceLocal || parseFloat(editPriceLocal) <= 0) {
+                  showToast('결제 금액을 올바르게 입력해 주세요!');
+                  return;
+                }
 
                 const price = parseFloat(editPriceLocal) || 0;
                 const isTaxExcludedCategory = editCategory === 'restaurant' || editCategory === 'transportation';
@@ -1213,7 +1308,7 @@ export const Screen3List: React.FC = () => {
 
                 const updated: ProductItem = {
                   ...editingItemData.item,
-                  name: editName,
+                  name: editName.trim(),
                   category: editCategory,
                   priceLocal: price,
                   priceUSD: priceUSD,
