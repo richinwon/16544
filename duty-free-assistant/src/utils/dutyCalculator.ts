@@ -16,7 +16,9 @@ export interface DutyCalculationResult {
   taxableUSD: number; // 과세 대상 금액 = max(0, totalGeneralUSD - 800)
   isOverLimit: boolean;
   baseTaxUSD: number; // 품목별 가중세율을 반영한 기본 산출세액 (USD)
-  voluntaryTaxUSD: number; // 자진 신고 시 (30% 감면 = * 0.7)
+  voluntaryTaxUSD: number; // 자진 신고 시 (30% 감면, 최대 한화 20만원 한도 적용)
+  voluntaryDiscountUSD: number; // 실제 감면된 금액 (USD)
+  isDiscountCapped: boolean; // 20만원 한도 초과로 상한(20만원)이 걸렸는지 여부
   unreportedPenaltyTaxUSD: number; // 미신고 적발 시 (40% 가산 = * 1.4)
   categoryDetails: CategoryDutyDetail[]; // 세목별 상세 내역 (산출내역세부 팝업용)
   
@@ -39,7 +41,7 @@ export interface DutyCalculationResult {
   };
 }
 
-export function calculateDuty(items: ProductItem[]): DutyCalculationResult {
+export function calculateDuty(items: ProductItem[], usdToKrwRate: number = 1380): DutyCalculationResult {
   let totalGeneralUSD = 0;
   let weightedTaxSumUSD = 0;
 
@@ -52,13 +54,22 @@ export function calculateDuty(items: ProductItem[]): DutyCalculationResult {
   const categoryAmountMap: Partial<Record<ProductCategory, number>> = {};
 
   items.forEach(item => {
+    // excludedFromDuty 체크 시 또는 카테고리가 '음식점'/'교통비'인 경우 면세 한도 및 과세 산출에서 완전히 제외
+    if (item.excludedFromDuty || item.category === 'restaurant' || item.category === 'transportation') {
+      return;
+    }
+
     if (item.category === 'liquor') {
-      liquorBottles += item.liquorBottles || 1;
+      const q = item.quantity && item.quantity > 0 ? item.quantity : 1;
+      liquorBottles += (item.liquorBottles || 1) * q;
       liquorUSD += item.priceUSD;
     } else if (item.category === 'tobacco') {
-      tobaccoPacks += item.tobaccoPacks || 10;
+      const q = item.quantity && item.quantity > 0 ? item.quantity : 1;
+      tobaccoPacks += (item.tobaccoPacks || 10) * q;
     } else if (item.category === 'perfume') {
-      perfumeMl += item.perfumeMl || 50;
+      const q = item.quantity && item.quantity > 0 ? item.quantity : 1;
+      const unitMl = item.perfumeMl !== undefined && item.perfumeMl > 0 ? item.perfumeMl : 50;
+      perfumeMl += unitMl * q;
     } else {
       totalGeneralUSD += item.priceUSD;
       categoryAmountMap[item.category] = (categoryAmountMap[item.category] || 0) + item.priceUSD;
@@ -95,7 +106,16 @@ export function calculateDuty(items: ProductItem[]): DutyCalculationResult {
   }
 
   const baseTaxUSD = parseFloat(weightedTaxSumUSD.toFixed(2));
-  const voluntaryTaxUSD = parseFloat((baseTaxUSD * 0.7).toFixed(2));
+
+  // 자진신고 30% 감면 계산 (관세법상 감면 한도: 최대 한화 200,000원)
+  const maxDiscountKRW = 200000;
+  const maxDiscountUSD = parseFloat((maxDiscountKRW / (usdToKrwRate || 1380)).toFixed(2));
+  const rawDiscountUSD = parseFloat((baseTaxUSD * 0.3).toFixed(2));
+  
+  const isDiscountCapped = rawDiscountUSD > maxDiscountUSD;
+  const voluntaryDiscountUSD = isDiscountCapped ? maxDiscountUSD : rawDiscountUSD;
+  const voluntaryTaxUSD = parseFloat(Math.max(0, baseTaxUSD - voluntaryDiscountUSD).toFixed(2));
+
   const unreportedPenaltyTaxUSD = parseFloat((baseTaxUSD * 1.4).toFixed(2));
 
   return {
@@ -105,6 +125,8 @@ export function calculateDuty(items: ProductItem[]): DutyCalculationResult {
     isOverLimit,
     baseTaxUSD,
     voluntaryTaxUSD,
+    voluntaryDiscountUSD,
+    isDiscountCapped,
     unreportedPenaltyTaxUSD,
     categoryDetails,
     liquor: {

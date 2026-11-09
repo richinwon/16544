@@ -6,6 +6,7 @@ import { Screen2Camera } from './components/Screen2Camera';
 import { Screen3List } from './components/Screen3List';
 import { Screen4Report } from './components/Screen4Report';
 import { Screen5Guide } from './components/Screen5Guide';
+import { Screen6Calculator } from './components/Screen6Calculator';
 import { BottomNavigation } from './components/BottomNavigation';
 
 export const MainApp: React.FC = () => {
@@ -27,6 +28,8 @@ export const MainApp: React.FC = () => {
         return <Screen4Report />;
       case 5:
         return <Screen5Guide />;
+      case 6:
+        return <Screen6Calculator />;
       default:
         return <Screen1Dashboard />;
     }

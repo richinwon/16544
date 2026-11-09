@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { ProductCategory, ProductItem, Receipt } from '../types';
-import { CATEGORY_LABELS, generateFolderName, parseFolderName } from '../types';
+import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName } from '../types';
 import { ChevronDown, Check, Plus, Minus, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface ManualReceiptModalProps {
@@ -340,7 +340,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsCategoryDropdownOpen(false)} />
                 <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
-                  {(Object.keys(CATEGORY_LABELS) as ProductCategory[]).map((cat) => {
+                  {CATEGORY_ORDER.map((cat) => {
                     const isSelected = cat === manualCategory;
                     return (
                       <button
@@ -363,10 +363,9 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             )}
           </div>
 
-          {/* 5. 품목명 vs 수량/용량 인풋 박스 너비 조정 (수량칸 약 7mm/28px 확장) */}
+          {/* 5. 품목명(70%) : 수량/용량(30%) 7:3 가로 비율 배치 */}
           <div className="flex gap-2 items-start">
-            {/* 품목명 (너비 유동적 flex-1) */}
-            <div className="flex-1 min-w-0">
+            <div className="w-[70%]">
               <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                 품목명 *
               </label>
@@ -379,8 +378,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
               />
             </div>
 
-            {/* 수량 / 용량 컨트롤러 (기존 30% -> w-[130px]로 7mm/28px 상당 확장) */}
-            <div className="w-[130px] shrink-0">
+            <div className="w-[30%]">
               <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
                 {isPerfume ? '용량 *' : '수량 *'}
               </label>

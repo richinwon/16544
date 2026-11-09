@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import type { Receipt, ProductItem, ExchangeRates } from '../types';
+import { loadFirebaseReceipts, saveFirebaseReceipt, deleteFirebaseReceipt } from '../services/firebaseService';
+import { isFirebaseConfigured } from '../firebase';
 import { generateFolderName } from '../types';
 
 interface AppContextType {
@@ -16,6 +18,8 @@ interface AppContextType {
   updateReceipt: (receipt: Receipt) => void;
   deleteReceipt: (id: string) => void;
   addItemToReceipt: (receiptId: string, item: ProductItem) => void;
+  updateItemInReceipt: (receiptId: string, item: ProductItem) => void;
+  toggleExcludeItem: (receiptId: string, itemId: string) => void;
   deleteItemFromReceipt: (receiptId: string, itemId: string) => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
@@ -27,6 +31,13 @@ interface AppContextType {
   updateExchangeRate: (currency: keyof ExchangeRates, rate: number) => void;
   summaryBgColor: string;
   setSummaryBgColor: (color: string) => void;
+  // 여행 폴더 생성 정보 (날짜, 국가, 도시)
+  tripDate: string;
+  setTripDate: (date: string) => void;
+  tripCountry: string;
+  setTripCountry: (country: string) => void;
+  tripCity: string;
+  setTripCity: (city: string) => void;
 }
 
 const DEFAULT_RATES: ExchangeRates = {
@@ -136,6 +147,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return list;
   }, [receipts]);
 
+  const [tripDate, setTripDateState] = useState<string>(() => {
+    return localStorage.getItem('dutyfree_trip_date') || new Date().toISOString().split('T')[0];
+  });
+  const [tripCountry, setTripCountryState] = useState<string>(() => {
+    return localStorage.getItem('dutyfree_trip_country') || '일본';
+  });
+  const [tripCity, setTripCityState] = useState<string>(() => {
+    return localStorage.getItem('dutyfree_trip_city') || '도쿄';
+  });
+
+  const setTripDate = (date: string) => {
+    setTripDateState(date);
+    localStorage.setItem('dutyfree_trip_date', date);
+  };
+  const setTripCountry = (country: string) => {
+    setTripCountryState(country);
+    localStorage.setItem('dutyfree_trip_country', country);
+  };
+  const setTripCity = (city: string) => {
+    setTripCityState(city);
+    localStorage.setItem('dutyfree_trip_city', city);
+  };
+
   const [selectedFolder, setSelectedFolderState] = useState<string>(() => {
     const saved = localStorage.getItem('dutyfree_selected_folder');
     return saved || '';
@@ -170,6 +204,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('dutyfree_receipts', JSON.stringify(receipts));
   }, [receipts]);
+
+  // Firebase 연결 시 유저 변경 시 Firestore에서 영수증 로드
+  useEffect(() => {
+    if (username && isFirebaseConfigured) {
+      loadFirebaseReceipts(username).then((remoteReceipts: Receipt[]) => {
+        if (remoteReceipts && remoteReceipts.length > 0) {
+          setReceipts(remoteReceipts);
+        } else if (receipts.length > 0) {
+          // 로컬 영수증이 있으면 첫 Firebase 업로드 동기화
+          receipts.forEach(r => saveFirebaseReceipt(username, r));
+        }
+      });
+    }
+  }, [username]);
+
 
   // Save exchange rates
   useEffect(() => {
@@ -230,14 +279,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (receipt.folderName) {
       setSelectedFolder(receipt.folderName);
     }
+    if (username && isFirebaseConfigured) {
+      saveFirebaseReceipt(username, receipt);
+    }
   };
 
   const updateReceipt = (updated: Receipt) => {
     setReceipts(prev => prev.map(r => r.id === updated.id ? updated : r));
+    if (username && isFirebaseConfigured) {
+      saveFirebaseReceipt(username, updated);
+    }
   };
 
   const deleteReceipt = (id: string) => {
     setReceipts(prev => prev.filter(r => r.id !== id));
+    if (username && isFirebaseConfigured) {
+      deleteFirebaseReceipt(username, id);
+    }
   };
 
   const addItemToReceipt = (receiptId: string, item: ProductItem) => {
@@ -249,6 +307,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...r,
           items: updatedItems,
           totalUSD: parseFloat(newTotal.toFixed(2))
+        };
+      }
+      return r;
+    }));
+  };
+
+  const updateItemInReceipt = (receiptId: string, updatedItem: ProductItem) => {
+    setReceipts(prev => prev.map(r => {
+      if (r.id === receiptId) {
+        const updatedItems = r.items.map(it => it.id === updatedItem.id ? updatedItem : it);
+        const newTotal = updatedItems.reduce((acc, cur) => acc + cur.priceUSD, 0);
+        return {
+          ...r,
+          items: updatedItems,
+          totalUSD: parseFloat(newTotal.toFixed(2))
+        };
+      }
+      return r;
+    }));
+  };
+
+  const toggleExcludeItem = (receiptId: string, itemId: string) => {
+    setReceipts(prev => prev.map(r => {
+      if (r.id === receiptId) {
+        const updatedItems = r.items.map(it => {
+          if (it.id === itemId) {
+            return { ...it, excludedFromDuty: !it.excludedFromDuty };
+          }
+          return it;
+        });
+        return {
+          ...r,
+          items: updatedItems,
         };
       }
       return r;
@@ -286,6 +377,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateReceipt,
         deleteReceipt,
         addItemToReceipt,
+        updateItemInReceipt,
+        toggleExcludeItem,
         deleteItemFromReceipt,
         isDarkMode,
         toggleDarkMode,
@@ -297,6 +390,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateExchangeRate,
         summaryBgColor,
         setSummaryBgColor,
+        tripDate,
+        setTripDate,
+        tripCountry,
+        setTripCountry,
+        tripCity,
+        setTripCity,
       }}
     >
       {children}

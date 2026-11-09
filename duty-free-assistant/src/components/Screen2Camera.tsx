@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import type { Receipt, ProductItem, ProductCategory } from '../types';
+import type { Receipt, ProductItem } from '../types';
 import { generateFolderName } from '../types';
 import { 
   Camera, 
@@ -10,11 +10,23 @@ import {
   AlertTriangle, 
   ArrowLeft,
   Layers,
-  MapPin
+  MapPin,
+  X,
+  Video
 } from 'lucide-react';
+import { ManualReceiptModal } from './ManualReceiptModal';
 
 export const Screen2Camera: React.FC = () => {
-  const { setCurrentScreen, addReceipt, convertCurrencyToUSD } = useApp();
+  const { 
+    setCurrentScreen, 
+    addReceipt,
+    tripDate: manualDate,
+    setTripDate: setManualDate,
+    tripCountry: manualCountry,
+    setTripCountry: setManualCountry,
+    tripCity: manualCity,
+    setTripCity: setManualCity
+  } = useApp();
   
   const [isContinuousMode, setIsContinuousMode] = useState(false);
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
@@ -25,18 +37,69 @@ export const Screen2Camera: React.FC = () => {
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
 
-  // Manual & location state
-  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
-  const [manualCountry, setManualCountry] = useState('일본');
-  const [manualCity, setManualCity] = useState('도쿄');
-  const [manualStore, setManualStore] = useState('');
-  const [manualItemName, setManualItemName] = useState('');
-  const [manualCategory, setManualCategory] = useState<ProductCategory>('cosmetics_general');
-  const [manualPriceLocal, setManualPriceLocal] = useState('');
-  const [manualTaxLocal, setManualTaxLocal] = useState('');
-  const [manualCurrency, setManualCurrency] = useState<'USD' | 'KRW' | 'JPY' | 'EUR'>('JPY');
+  // 실시간 카메라 뷰파인더 연사 스트림 모달 상태
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 카메라 스트림 시작/종료 제어
+  const startCamera = async () => {
+    setCameraError('');
+    setIsCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.error('Camera access error:', err);
+      setCameraError('카메라를 열 수 없습니다. 브라우저 카메라 권한을 확인하거나 파일 업로드를 이용해 주세요.');
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraOpen(false);
+  };
+
+  // 연사 셔터 클릭: 카메라 화면 유지한 채 현재 프레임을 캡처하여 capturedImages에 추가
+  const takeSnapshot = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+    setCapturedImages(prev => [...prev, dataUrl]);
+
+    // 연사 모드가 아닐 경우 1장 찍고 종료
+    if (!isContinuousMode) {
+      stopCamera();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -60,10 +123,6 @@ export const Screen2Camera: React.FC = () => {
         setCapturedImages(results);
       }
     });
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   const removeImage = (index: number) => {
@@ -71,111 +130,67 @@ export const Screen2Camera: React.FC = () => {
   };
 
   const handleStartAnalysis = () => {
-    if (capturedImages.length === 0) {
-      alert('영수증 이미지를 1장 이상 등록해 주세요.');
-      return;
-    }
+    if (capturedImages.length === 0) return;
 
     setIsAnalyzing(true);
 
+    // Mock OCR Process
     setTimeout(() => {
       setIsAnalyzing(false);
 
-      const simulateFailure = failCount < 1;
-
-      if (simulateFailure) {
-        setFailCount(prev => prev + 1);
+      if (failCount === 0 && Math.random() < 0.15) {
+        setFailCount(1);
         setShowRetryModal(true);
-      } else {
-        const sampleDate = manualDate;
-        const country = manualCountry || '일본';
-        const city = manualCity || '도쿄';
-        const autoFolder = generateFolderName(sampleDate, country, city);
+        return;
+      }
 
-        const sampleItems: ProductItem[] = [
+      // Successful analysis mock
+      const autoFolderName = generateFolderName(manualDate, manualCountry, manualCity);
+
+      capturedImages.forEach((imgSrc, idx) => {
+        const mockItems: ProductItem[] = [
           {
-            id: 'ocr-' + Date.now() + '-1',
-            name: '조말론 잉글리쉬 페어 앤 프리지아 코롱 100ml',
+            id: 'mock-item-1-' + Date.now() + '-' + idx,
+            name: `${manualCity} 명품 향수`,
             category: 'perfume',
             priceLocal: 140,
             currency: 'USD',
             priceUSD: 140,
+            quantity: 1,
             taxLocal: 14,
             perfumeMl: 100
           },
           {
-            id: 'ocr-' + Date.now() + '-2',
-            name: '몽클레르 다운 패딩 자켓',
-            category: 'clothing_shoes',
+            id: 'mock-item-2-' + Date.now() + '-' + idx,
+            name: `${manualCity} 가죽 가방`,
+            category: 'bags',
             priceLocal: 950,
             currency: 'USD',
             priceUSD: 950,
+            quantity: 1,
             taxLocal: 95
           }
         ];
 
         const newReceipt: Receipt = {
-          id: 'receipt-' + Date.now(),
-          date: sampleDate,
-          country,
-          city,
-          folderName: autoFolder,
-          storeName: `${city} 면세점 (AI 자동추출)`,
-          imageUrl: capturedImages[0],
-          items: sampleItems,
+          id: 'receipt-' + Date.now() + '-' + idx,
+          date: manualDate,
+          country: manualCountry,
+          city: manualCity,
+          folderName: autoFolderName,
+          storeName: `${manualCity} 부티크 면세점 #${idx + 1}`,
+          imageUrl: imgSrc,
+          items: mockItems,
           totalUSD: 1090,
-          createdAt: Date.now()
+          createdAt: Date.now() + idx
         };
 
         addReceipt(newReceipt);
-        alert(`✨ 영수증 AI 분석 완료!\n여행 폴더 [${autoFolder}]에 자동 저장되었습니다.`);
-        setCurrentScreen(3);
-      }
+      });
+
+      alert(`분석 완료! ${capturedImages.length}장의 영수증이 여행 폴더 [${autoFolderName}]에 등록되었습니다.`);
+      setCurrentScreen(3);
     }, 1500);
-  };
-
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualItemName || !manualPriceLocal) {
-      alert('품목명과 결제 금액을 입력해 주세요.');
-      return;
-    }
-
-    const price = parseFloat(manualPriceLocal) || 0;
-    const tax = parseFloat(manualTaxLocal) || 0;
-    const priceUSD = convertCurrencyToUSD(price, manualCurrency);
-    const autoFolder = generateFolderName(manualDate, manualCountry, manualCity);
-
-    const newItem: ProductItem = {
-      id: 'manual-item-' + Date.now(),
-      name: manualItemName,
-      category: manualCategory,
-      priceLocal: price,
-      currency: manualCurrency,
-      priceUSD: priceUSD,
-      taxLocal: tax,
-      liquorBottles: manualCategory === 'liquor' ? 1 : undefined,
-      tobaccoPacks: manualCategory === 'tobacco' ? 10 : undefined,
-      perfumeMl: manualCategory === 'perfume' ? 100 : undefined,
-    };
-
-    const newReceipt: Receipt = {
-      id: 'manual-receipt-' + Date.now(),
-      date: manualDate,
-      country: manualCountry,
-      city: manualCity,
-      folderName: autoFolder,
-      storeName: manualStore || `${manualCity} 직접 입력 상점`,
-      imageUrl: capturedImages[0] || undefined,
-      items: [newItem],
-      totalUSD: priceUSD,
-      createdAt: Date.now()
-    };
-
-    addReceipt(newReceipt);
-    setShowManualModal(false);
-    alert(`영수증이 여행 폴더 [${autoFolder}]에 성공적으로 등록되었습니다.`);
-    setCurrentScreen(3);
   };
 
   // Preview folder name
@@ -183,32 +198,41 @@ export const Screen2Camera: React.FC = () => {
 
   return (
     <div className="p-4 space-y-4 pb-24">
-      {/* Top Header */}
-      <div className="flex items-center justify-between pt-2">
+      {/* Top Header - 정가운데 정렬 */}
+      <div className="relative flex items-center justify-center pt-2">
         <button
           onClick={() => setCurrentScreen(1)}
-          className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
+          className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
         >
           <ArrowLeft className="w-4 h-4" /> 뒤로가기
         </button>
         <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
           영수증 AI 촬영 / 등록
         </h2>
-        <div className="w-10"></div>
       </div>
 
       {/* Travel Trip Folder Info Banner */}
-      <div className="p-4 rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xs space-y-2.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-blue-600" />
-            <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-              여행 일정 및 방문지 설정 (자동 폴더 생성)
+      <div className="p-3.5 sm:p-4 rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xs space-y-2.5">
+        <div className="flex items-start justify-between gap-1">
+          {/* 좌측 텍스트: 괄호 문구 줄바꿈 및 좌측 정렬 */}
+          <div className="flex items-start gap-1.5 min-w-0">
+            <MapPin className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-left leading-tight">
+              <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block">
+                여행일정 및 방문지 설정
+              </span>
+              <span className="text-[10px] text-gray-400 font-medium block mt-0.5">
+                (자동폴더생성)
+              </span>
+            </div>
+          </div>
+
+          {/* 우측 폴더명: 영역 벗어나지 않도록 좌측으로 이동 및 너비 확보 */}
+          <div className="text-right shrink-0 max-w-[48%]">
+            <span className="text-[11px] sm:text-xs font-bold text-blue-600 dark:text-blue-400 truncate block bg-blue-50/80 dark:bg-blue-950/60 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+              📁 {previewFolder}
             </span>
           </div>
-          <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
-            📁 {previewFolder}
-          </span>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
@@ -253,10 +277,10 @@ export const Screen2Camera: React.FC = () => {
           <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center">
             <Layers className="w-5 h-5" />
           </div>
-          <div>
+          <div className="text-left">
             <span className="text-xs font-bold text-blue-900 dark:text-blue-300">연속 촬영 모드</span>
             <p className="text-[11px] text-blue-700/80 dark:text-blue-400">
-              여러 장의 영수증을 연달아 촬영하여 등록
+              카메라 화면에서 나가지 않고 연속으로 연사 촬영
             </p>
           </div>
         </div>
@@ -273,20 +297,27 @@ export const Screen2Camera: React.FC = () => {
 
       {/* Camera Viewport / Upload Box */}
       <div 
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (isContinuousMode) {
+            startCamera();
+          } else {
+            fileInputRef.current?.click();
+          }
+        }}
         className="cursor-pointer border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-blue-500 rounded-3xl p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-gray-800/80 transition-all group"
       >
         <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-md">
           <Camera className="w-8 h-8" />
         </div>
         <h3 className="text-sm font-bold text-gray-800 dark:text-white">
-          영수증 사진을 촬영하거나 업로드하세요
+          {isContinuousMode ? '연속 촬영 카메라 열기' : '영수증 사진을 촬영하거나 업로드하세요'}
         </h3>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          JPG, PNG 지원 · 상점명, 결제금액, 세금이 선명할수록 좋습니다
+          {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : 'JPG, PNG 지원 · 상점명, 결제금액, 세금이 선명할수록 좋습니다'}
         </p>
         <div className="mt-4 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20">
-          <Upload className="w-3.5 h-3.5" /> 파일 선택 / 촬영하기
+          {isContinuousMode ? <Video className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+          {isContinuousMode ? '연사 카메라 시작하기' : '파일 선택 / 촬영하기'}
         </div>
         <input
           ref={fileInputRef}
@@ -304,7 +335,7 @@ export const Screen2Camera: React.FC = () => {
         <div className="space-y-2">
           <div className="flex justify-between items-center px-1">
             <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
-              등록 대기 중인 영수증 ({capturedImages.length}장)
+              분석 목록에 추가된 영수증 ({capturedImages.length}장)
             </span>
             <button
               onClick={() => setCapturedImages([])}
@@ -356,7 +387,7 @@ export const Screen2Camera: React.FC = () => {
           ) : (
             <>
               <Sparkles className="w-4 h-4 text-amber-300" />
-              AI 분석 시작하기 (폴더: {previewFolder})
+              AI 분석 시작하기 ({capturedImages.length}장 · 폴더: {previewFolder})
             </>
           )}
         </button>
@@ -369,6 +400,103 @@ export const Screen2Camera: React.FC = () => {
           영수증 사진 없이 수기로 직접 입력하기
         </button>
       </div>
+
+      {/* Modal: 연속 촬영 카메라 뷰파인더 모달 */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col justify-between p-4">
+          {/* Header */}
+          <div className="flex justify-between items-center text-white pt-2 px-2">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-rose-500 animate-pulse" />
+              <span className="text-sm font-bold">
+                {isContinuousMode ? '연속 촬영 모드 (연사)' : '카메라 촬영'}
+              </span>
+            </div>
+            <button
+              onClick={stopCamera}
+              className="p-2 rounded-full bg-white/20 text-white hover:bg-white/30"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Video Stream / Viewfinder */}
+          <div className="relative flex-1 my-3 rounded-3xl overflow-hidden bg-neutral-900 flex items-center justify-center">
+            {cameraError ? (
+              <div className="p-6 text-center text-rose-400 text-xs">
+                <p>{cameraError}</p>
+                <button
+                  onClick={() => {
+                    stopCamera();
+                    fileInputRef.current?.click();
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl bg-blue-600 text-white font-bold"
+                >
+                  파일 선택으로 전환
+                </button>
+              </div>
+            ) : (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                {/* 뷰파인더 가이드라인 박스 */}
+                <div className="absolute inset-8 border-2 border-white/40 rounded-2xl pointer-events-none flex items-center justify-center">
+                  <span className="text-[11px] text-white/70 bg-black/40 px-3 py-1 rounded-full">
+                    영수증을 사각형 안에 맞춰주세요
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Footer Controller Bar: 셔터 & 추가된 장수 & 완료 버튼 */}
+          <div className="flex items-center justify-around py-3">
+            {/* 현재 추가된 썸네일 미리보기 */}
+            <div className="w-14 text-center">
+              {capturedImages.length > 0 ? (
+                <div className="relative inline-block w-12 h-12 rounded-xl overflow-hidden border-2 border-white">
+                  <img
+                    src={capturedImages[capturedImages.length - 1]}
+                    alt="Latest thumbnail"
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] font-bold px-1.5 rounded-full">
+                    {capturedImages.length}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-xs text-white/50">0장</span>
+              )}
+            </div>
+
+            {/* 메인 셔터 버튼 (연사 시 누를 때마다 촬영 목록에 바로 누적 추가) */}
+            <button
+              onClick={takeSnapshot}
+              className="w-18 h-18 rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition-transform bg-white/20 shadow-2xl"
+              title="촬영하기"
+            >
+              <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center text-blue-600 font-black">
+                <Camera className="w-7 h-7" />
+              </div>
+            </button>
+
+            {/* 촬영 완료 후 닫기 */}
+            <div className="w-14 text-center">
+              <button
+                onClick={stopCamera}
+                className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold active:scale-95 transition-transform"
+              >
+                완료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal 1: 1회 실패 팝업 */}
       {showRetryModal && (
@@ -387,7 +515,11 @@ export const Screen2Camera: React.FC = () => {
               <button
                 onClick={() => {
                   setShowRetryModal(false);
-                  fileInputRef.current?.click();
+                  if (isContinuousMode) {
+                    startCamera();
+                  } else {
+                    fileInputRef.current?.click();
+                  }
                 }}
                 className="w-full py-3 rounded-2xl bg-blue-600 text-white font-bold text-xs shadow-md"
               >
@@ -397,7 +529,7 @@ export const Screen2Camera: React.FC = () => {
                 onClick={() => {
                   setShowRetryModal(false);
                   setFailCount(2);
-                  alert('2회 이상 인식 실패: 수기 입력 모드로 전환합니다.');
+                  alert('수기 입력 모드로 전환합니다.');
                   setShowManualModal(true);
                 }}
                 className="w-full py-2.5 rounded-2xl text-gray-500 dark:text-gray-400 font-semibold text-xs hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -409,170 +541,12 @@ export const Screen2Camera: React.FC = () => {
         </div>
       )}
 
-      {/* Modal 2: 수기 입력 모달 */}
-      {showManualModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="font-extrabold text-base text-gray-900 dark:text-white flex items-center gap-1.5">
-                  📝 영수증 수기 등록 모드
-                </h3>
-                <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
-                  저장 폴더: {previewFolder}
-                </span>
-              </div>
-              <button
-                onClick={() => setShowManualModal(false)}
-                className="p-1 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleManualSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    국가명
-                  </label>
-                  <input
-                    type="text"
-                    value={manualCountry}
-                    onChange={(e) => setManualCountry(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    도시명
-                  </label>
-                  <input
-                    type="text"
-                    value={manualCity}
-                    onChange={(e) => setManualCity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  구매 날짜
-                </label>
-                <input
-                  type="date"
-                  value={manualDate}
-                  onChange={(e) => setManualDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  구매처 / 상점명
-                </label>
-                <input
-                  type="text"
-                  placeholder="예: 돈키호테 신주쿠점"
-                  value={manualStore}
-                  onChange={(e) => setManualStore(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  품목명 *
-                </label>
-                <input
-                  type="text"
-                  placeholder="예: 나이키 운동화"
-                  value={manualItemName}
-                  onChange={(e) => setManualItemName(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  품목 카테고리 (세율 적용)
-                </label>
-                <select
-                  value={manualCategory}
-                  onChange={(e) => setManualCategory(e.target.value as ProductCategory)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                >
-                  <option value="cosmetics_general">화장품 / 일반물품 (15%)</option>
-                  <option value="clothing_shoes">의류 / 신발 (18%)</option>
-                  <option value="fur">모피제품 (19%)</option>
-                  <option value="bags">가방 / 핸드백 (20%)</option>
-                  <option value="deer_antler">녹용 (21%)</option>
-                  <option value="liquor">주류 (별도 한도 2병/$400)</option>
-                  <option value="tobacco">담배 (별도 한도 1보루)</option>
-                  <option value="perfume">향수 (별도 한도 100ml)</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    결제 통화
-                  </label>
-                  <select
-                    value={manualCurrency}
-                    onChange={(e) => setManualCurrency(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                  >
-                    <option value="USD">USD ($)</option>
-                    <option value="JPY">JPY (¥)</option>
-                    <option value="KRW">KRW (원)</option>
-                    <option value="EUR">EUR (€)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                    결제 금액 *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="0"
-                    value={manualPriceLocal}
-                    onChange={(e) => setManualPriceLocal(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-bold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  현지 세금(VAT) 포함액
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="0 (사후 환급용)"
-                  value={manualTaxLocal}
-                  onChange={(e) => setManualTaxLocal(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md"
-                >
-                  영수증 등록 완료
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modal 2: 수기 입력 모달 (공통 컴포넌트) */}
+      <ManualReceiptModal 
+        isOpen={showManualModal} 
+        onClose={() => setShowManualModal(false)} 
+        onSuccess={() => setCurrentScreen(3)}
+      />
     </div>
   );
 };
