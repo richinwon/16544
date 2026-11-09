@@ -130,14 +130,14 @@ export const Screen6Calculator: React.FC = () => {
           <label className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5 block">
             금액 및 기준 통화 선택
           </label>
-          <div className="flex gap-2 relative">
+          <div className="flex gap-2 relative items-stretch">
             <input 
               type="text"
               inputMode="decimal"
               value={displayAmount}
               onChange={handleAmountChange}
               onBlur={handleAmountBlur}
-              className="w-[52%] px-3.5 py-3 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-black text-base min-w-0"
+              className="w-[52%] h-[48px] px-3.5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-black text-base min-w-0 box-border leading-normal flex items-center"
               placeholder="0.00"
             />
 
@@ -146,7 +146,7 @@ export const Screen6Calculator: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="w-full px-3 py-3 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors"
+                className="w-full h-[48px] px-3 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors box-border"
               >
                 <span className="truncate">{baseCurrency} ({CURRENCY_INFO[baseCurrency]?.symbol})</span>
                 <ChevronDown className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />

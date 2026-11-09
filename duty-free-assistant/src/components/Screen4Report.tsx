@@ -43,58 +43,45 @@ export const Screen4Report: React.FC = () => {
   const rawPercent = Math.round((duty.totalGeneralUSD / duty.dutyFreeLimitUSD) * 100);
   const percentUsed = Math.min(100, rawPercent);
 
-  const handleKakaoShare = () => {
-    const shareTitle = `[면세비서] 면세 리포트 (${selectedFolder})`;
-    const shareDescription = `총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} | 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)`;
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleKakaoShare = async () => {
     const currentUrl = window.location.href;
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-    const fallbackNoKakao = () => {
-      try {
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(currentUrl);
-        }
-      } catch (e) {
-        console.error('Clipboard copy error:', e);
-      }
-      alert('카카오톡이 설치되어 있지 않습니다. 주소를 복사했어요! 원하시는 곳에 붙여넣기 해주세요!');
-    };
-
+    // 1) 클립보드 복사
     try {
-      if (window.Kakao) {
-        if (!window.Kakao.isInitialized()) {
-          window.Kakao.init('863d61c2f4b562691da541c463ef4685');
-        }
-
-        if (window.Kakao.Share) {
-          window.Kakao.Share.sendDefault({
-            objectType: 'feed',
-            content: {
-              title: shareTitle,
-              description: shareDescription,
-              imageUrl: 'https://tax-secretary-4db36.web.app/vite.svg',
-              link: {
-                mobileWebUrl: currentUrl,
-                webUrl: currentUrl,
-              },
-            },
-            buttons: [
-              {
-                title: '리포트 확인하기',
-                link: {
-                  mobileWebUrl: currentUrl,
-                  webUrl: currentUrl,
-                },
-              },
-            ],
-          });
-          return;
-        }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(currentUrl);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = currentUrl;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
       }
-
-      fallbackNoKakao();
     } catch (err) {
-      console.error('Kakao share error:', err);
-      fallbackNoKakao();
+      console.warn('Clipboard write error:', err);
+    }
+
+    // 2) 토스트/알림 노출
+    showToast('주소를 복사했어요!');
+
+    // 3) 환경별 분기 처리
+    if (isMobile) {
+      // 모바일: kakaolink 커스텀 스킴 실행
+      setTimeout(() => {
+        window.location.href = 'kakaolink://';
+      }, 500);
+    } else {
+      // PC 환경: 안내 메시지만 노출
+      alert('주소를 복사했어요! 원하시는 메신저나 채팅방에 붙여넣기(Ctrl+V)하세요.');
     }
   };
 
@@ -482,6 +469,12 @@ export const Screen4Report: React.FC = () => {
               닫기
             </button>
           </div>
+        </div>
+      )}
+      {/* 주소 복사 토스트 메시지 */}
+      {toastMessage && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-gray-900/90 text-white text-xs font-bold shadow-xl border border-white/10 animate-in fade-in zoom-in-95">
+          {toastMessage}
         </div>
       )}
     </div>

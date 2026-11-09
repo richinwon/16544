@@ -443,12 +443,12 @@ export const Screen3List: React.FC = () => {
       {/* Content for Tab 1: 개별 영수증 목록 (목적: 현지 사후환급 관리) */}
       {activeTab === 'individual' && (
         <div className="space-y-3">
-          {/* 상단 예상환급액 박스 (폴더 선택 + 엑셀 다운로드 바로 아래 배치 + 우측 예상 환급액 표시) */}
-          <div className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              {/* 좌측: 폴더 선택 박스 및 바로 아래 엑셀 다운로드 버튼 배치 */}
-              <div className="flex flex-col items-start gap-1 shrink-0">
-                <FolderSelect />
+          {/* 상단 예상환급액 박스 (폴더명 길이에 영향받지 않는 완벽 분리 Grid 레이아웃 & overflow 방지) */}
+          <div className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 overflow-hidden shadow-xs">
+            <div className="grid grid-cols-[auto_1fr] items-center gap-2">
+              {/* 좌측: 폴더 선택 박스 및 엑셀 다운로드 (최대 너비 제어로 우측 영역 침범 방지) */}
+              <div className="flex flex-col items-start gap-1 min-w-0 max-w-[170px] sm:max-w-[200px]">
+                <FolderSelect className="max-w-full" />
                 {folders.length > 0 && (
                   <button
                     onClick={() => {
@@ -456,7 +456,7 @@ export const Screen3List: React.FC = () => {
                       handleExportExcel(selectedFolder, rList);
                     }}
                     title="선택된 폴더 구매내역 엑셀 다운로드"
-                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 transition-colors shadow-xs active:scale-95 ml-1"
+                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 transition-colors shadow-xs active:scale-95 ml-1 shrink-0"
                   >
                     <Download className="w-3 h-3" />
                     <span>엑셀 다운로드</span>
@@ -464,25 +464,25 @@ export const Screen3List: React.FC = () => {
                 )}
               </div>
 
-              {/* 우측: 예상 환급액 및 안내 문구 */}
-              <div className="text-right flex flex-col items-end shrink-0">
-                <div className="flex items-center justify-end gap-1">
-                  <span className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+              {/* 우측: 고정 우측 정렬된 예상 환급액 및 안내 문구 */}
+              <div className="text-right flex flex-col items-end min-w-0 pl-1">
+                <div className="flex items-center justify-end gap-1 flex-wrap">
+                  <span className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 shrink-0">
                     <Coins className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> 예상 환급액
                   </span>
                   {refundStatus.isUnknownOrNonRefundable && (
-                    <span className="text-[10px] font-bold text-rose-500 flex items-center gap-0.5">
+                    <span className="text-[10px] font-bold text-rose-500 flex items-center gap-0.5 shrink-0">
                       <AlertCircle className="w-3 h-3" />
                       사후환급여부 확인 필요
                     </span>
                   )}
                 </div>
-                {/* 줄바꿈된 금액 표시부 */}
-                <span className={`text-xl sm:text-2xl font-black mt-0.5 ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                {/* 줄바꿈된 금액 표시부: 글자 크기 반응형 clamp 및 break-all 방지 */}
+                <span className={`text-lg sm:text-2xl font-black mt-0.5 truncate max-w-full ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
                   {refundStatus.amountStr}
                 </span>
-                {/* 금액 아래쪽으로 위치한 안내 문구 */}
-                <p className="text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5">
+                {/* 금액 아래쪽으로 위치한 안내 문구: 박스 밖으로 삐져나가지 않도록 자동 줄바꿈 */}
+                <p className="text-[9.5px] sm:text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right break-keep">
                   평균 환급 대행수수료를 차감한 예상 수령액입니다.
                 </p>
               </div>

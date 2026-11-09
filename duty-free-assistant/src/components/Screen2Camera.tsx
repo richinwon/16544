@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import type { Receipt, ProductItem } from '../types';
+import type { Receipt } from '../types';
 import { generateFolderName } from '../types';
+import { recognizeReceipt } from '../utils/ocrService';
 import { 
   Camera, 
   Upload, 
@@ -31,7 +32,9 @@ export const Screen2Camera: React.FC = () => {
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [failCount, setFailCount] = useState(0);
+  const [ocrStatus, setOcrStatus] = useState('');
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [, setFailCount] = useState(0);
 
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
@@ -129,68 +132,70 @@ export const Screen2Camera: React.FC = () => {
     setCapturedImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleStartAnalysis = () => {
+  const handleStartAnalysis = async () => {
     if (capturedImages.length === 0) return;
 
     setIsAnalyzing(true);
+    setOcrProgress(5);
+    setOcrStatus('영수증 분석 준비 중...');
 
-    // Mock OCR Process
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    try {
+      let createdFolderName = '';
 
-      if (failCount === 0 && Math.random() < 0.15) {
-        setFailCount(1);
-        setShowRetryModal(true);
-        return;
-      }
+      for (let idx = 0; idx < capturedImages.length; idx++) {
+        const imgSrc = capturedImages[idx];
+        setOcrStatus(`영수증 ${idx + 1}/${capturedImages.length}장 다국어 OCR 분석 중...`);
+        
+        const parsed = await recognizeReceipt(imgSrc, (prog, msg) => {
+          setOcrProgress(prog);
+          setOcrStatus(`[${idx + 1}/${capturedImages.length}] ${msg}`);
+        });
 
-      // Successful analysis mock
-      const autoFolderName = generateFolderName(manualDate, manualCountry, manualCity);
+        // 추출된 영수증 정보(날짜, 국가, 도시) 우선으로 폴더 자동 생성
+        const finalDate = parsed.date || manualDate || new Date().toISOString().split('T')[0];
+        const finalCountry = parsed.country || manualCountry || '일본';
+        const finalCity = parsed.city || manualCity || '도쿄';
 
-      capturedImages.forEach((imgSrc, idx) => {
-        const mockItems: ProductItem[] = [
-          {
-            id: 'mock-item-1-' + Date.now() + '-' + idx,
-            name: `${manualCity} 명품 향수`,
-            category: 'perfume',
-            priceLocal: 140,
-            currency: 'USD',
-            priceUSD: 140,
-            quantity: 1,
-            taxLocal: 14,
-            perfumeMl: 100
-          },
-          {
-            id: 'mock-item-2-' + Date.now() + '-' + idx,
-            name: `${manualCity} 가죽 가방`,
-            category: 'bags',
-            priceLocal: 950,
-            currency: 'USD',
-            priceUSD: 950,
-            quantity: 1,
-            taxLocal: 95
-          }
-        ];
+        // 앱의 기본 여행 설정값도 인식된 결과로 동기화
+        if (parsed.country && !manualCountry) setManualCountry(parsed.country);
+        if (parsed.city && !manualCity) setManualCity(parsed.city);
+        if (parsed.date && !manualDate) setManualDate(parsed.date);
+
+        const autoFolderName = generateFolderName(finalDate, finalCountry, finalCity);
+        createdFolderName = autoFolderName;
+
+        const totalUSD = parsed.items.reduce((sum, item) => sum + (item.priceUSD || item.priceLocal || 0), 0);
 
         const newReceipt: Receipt = {
           id: 'receipt-' + Date.now() + '-' + idx,
-          date: manualDate,
-          country: manualCountry,
-          city: manualCity,
+          date: finalDate,
+          country: finalCountry,
+          city: finalCity,
           folderName: autoFolderName,
-          storeName: `${manualCity} 부티크 면세점 #${idx + 1}`,
+          storeName: parsed.storeName || `${finalCity} 매장 #${idx + 1}`,
           imageUrl: imgSrc,
-          items: mockItems,
-          totalUSD: 1090,
+          items: parsed.items,
+          totalUSD: Math.round(totalUSD * 100) / 100,
           createdAt: Date.now() + idx
         };
 
         addReceipt(newReceipt);
-      });
+      }
 
-      alert(`분석 완료! ${capturedImages.length}장의 영수증이 여행 폴더 [${autoFolderName}]에 등록되었습니다.`);
+      setOcrProgress(100);
+      setOcrStatus('분석 완료!');
+      alert(`✨ 다국어 OCR 분석 완료!
+추출된 영수증 정보 기반으로 여행 폴더 [${createdFolderName}]가 자동 생성되고 등록되었습니다.`);
       setCurrentScreen(3);
-    }, 1500);
+    } catch (err) {
+      console.error('OCR pipeline error:', err);
+      alert('영수증 인식 중 문제가 발생하여 수기 입력 모드로 전환합니다.');
+      setShowManualModal(true);
+    } finally {
+      setIsAnalyzing(false);
+      setOcrProgress(0);
+      setOcrStatus('');
+    }
   };
 
   // Preview folder name
@@ -322,7 +327,7 @@ export const Screen2Camera: React.FC = () => {
           <Camera className="w-8 h-8" />
         </button>
         <h3 className="text-sm font-bold text-gray-800 dark:text-white">
-          {isContinuousMode ? '여러 장의 영수증 사진을 한 번에 선택하세요' : '영수증 사진을 선택하세요'}
+          {isContinuousMode ? '여러 장의 영수증을 촬영합니다' : '영수증을 촬영합니다'}
         </h3>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : '카메라 아이콘을 누르면 카메라가 실행됩니다'}
@@ -412,7 +417,7 @@ export const Screen2Camera: React.FC = () => {
           {isAnalyzing ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              AI가 영수증 정보를 추출하는 중...
+              {ocrStatus || 'AI 다국어 OCR 분석 중...'} ({ocrProgress}%)
             </>
           ) : (
             <>
