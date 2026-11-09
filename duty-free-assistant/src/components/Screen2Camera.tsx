@@ -11,8 +11,7 @@ import {
   ArrowLeft,
   Layers,
   MapPin,
-  X,
-  Video
+  X
 } from 'lucide-react';
 import { ManualReceiptModal } from './ManualReceiptModal';
 
@@ -280,7 +279,7 @@ export const Screen2Camera: React.FC = () => {
           <div className="text-left">
             <span className="text-xs font-bold text-blue-900 dark:text-blue-300">연속 촬영 모드</span>
             <p className="text-[11px] text-blue-700/80 dark:text-blue-400">
-              카메라 화면에서 나가지 않고 연속으로 연사 촬영
+              여러 장의 영수증 사진을 한 번에 선택하여 등록
             </p>
           </div>
         </div>
@@ -298,32 +297,34 @@ export const Screen2Camera: React.FC = () => {
       {/* Camera Viewport / Upload Box */}
       <div 
         onClick={() => {
-          if (isContinuousMode) {
-            startCamera();
-          } else {
-            fileInputRef.current?.click();
-          }
+          fileInputRef.current?.click();
         }}
         className="cursor-pointer border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-blue-500 rounded-3xl p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-gray-800/80 transition-all group"
       >
         <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-md">
-          <Camera className="w-8 h-8" />
+          <Upload className="w-8 h-8" />
         </div>
         <h3 className="text-sm font-bold text-gray-800 dark:text-white">
-          {isContinuousMode ? '연속 촬영 카메라 열기' : '영수증 사진을 촬영하거나 업로드하세요'}
+          {isContinuousMode ? '여러 장의 영수증 사진을 한 번에 선택하세요' : '영수증 사진을 선택하세요'}
         </h3>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : 'JPG, PNG 지원 · 상점명, 결제금액, 세금이 선명할수록 좋습니다'}
+          {isContinuousMode ? '여러 장의 영수증 이미지를 한 번에 선택하여 분석 목록에 추가합니다' : 'JPG, PNG 지원 · 상점명, 결제금액, 세금이 선명할수록 좋습니다'}
         </p>
-        <div className="mt-4 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20">
-          {isContinuousMode ? <Video className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
-          {isContinuousMode ? '연사 카메라 시작하기' : '파일 선택 / 촬영하기'}
-        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            fileInputRef.current?.click();
+          }}
+          className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          <span>{isContinuousMode ? '여러 파일 선택' : '파일선택'}</span>
+        </button>
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           multiple={isContinuousMode}
           onChange={handleFileChange}
           className="hidden"

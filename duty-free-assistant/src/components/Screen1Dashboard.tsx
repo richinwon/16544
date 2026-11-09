@@ -90,15 +90,18 @@ export const Screen1Dashboard: React.FC = () => {
 
   return (
     <div className="p-4 space-y-4 pb-20">
-      {/* Top Header: 유저 환영 문구 및 활용 가이드 재배치 + 로그아웃 버튼 - 환영 문구 정가운데 정렬 */}
+      {/* Top Header: 여행 폴더 선택 및 유저 환영 문구 (좌측 정렬) + 로그아웃 버튼 (우측 유지) */}
       <div className="pt-2 space-y-2">
-        <div className="relative flex items-center justify-center">
-          <h2 className="text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5">
-            반가워요, <span className="text-blue-600 dark:text-blue-400">{username}</span>님! ✈️
-          </h2>
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col items-start gap-1">
+            <FolderSelect />
+            <h2 className="text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mt-0.5 text-left">
+              반가워요, <span className="text-blue-600 dark:text-blue-400">{username}</span>님! ✈️
+            </h2>
+          </div>
           <button
             onClick={logout}
-            className="absolute right-0 px-3 py-1.5 rounded-2xl bg-gray-100 hover:bg-rose-50 dark:bg-gray-800 dark:hover:bg-rose-950/30 text-gray-600 hover:text-rose-600 dark:text-gray-300 dark:hover:text-rose-400 font-bold text-xs transition-colors shadow-xs flex items-center gap-1"
+            className="self-start mt-1 px-3 py-1.5 rounded-2xl bg-gray-100 hover:bg-rose-50 dark:bg-gray-800 dark:hover:bg-rose-950/30 text-gray-600 hover:text-rose-600 dark:text-gray-300 dark:hover:text-rose-400 font-bold text-xs transition-colors shadow-xs flex items-center gap-1 shrink-0"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>로그아웃</span>
@@ -124,31 +127,35 @@ export const Screen1Dashboard: React.FC = () => {
       <div 
         className={`relative overflow-hidden rounded-3xl ${currentPreset.className} text-white p-5 shadow-xl shadow-indigo-950/20 transition-colors duration-300`}
       >
-        {/* Top bar inside box: 폴더 선택 셀렉트 박스 (좌상단 이동), status badge, and Settings Gear Icon */}
+        {/* Top bar inside box: 폴더명 뱃지, status badge, and Settings Gear Icon */}
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-1.5">
-            <FolderSelect />
+            <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/10 text-white/90 font-medium">
+              {selectedFolder}
+            </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 ${
+          <div className="flex items-center gap-2 shrink-0">
+            <div className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 whitespace-nowrap shrink-0 ${
               duty.isOverLimit 
                 ? 'bg-rose-500/25 text-rose-300 border border-rose-400/40' 
                 : 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
             }`}>
-              {duty.isOverLimit ? <ShieldAlert className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-              {duty.isOverLimit 
-                ? `$${duty.taxableUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 초과` 
-                : '한도 내 안전'}
+              {duty.isOverLimit ? <ShieldAlert className="w-3 h-3 shrink-0" /> : <ShieldCheck className="w-3 h-3 shrink-0" />}
+              <span className="whitespace-nowrap">
+                {duty.isOverLimit 
+                  ? `$${duty.taxableUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 초과` 
+                  : '한도 내 안전'}
+              </span>
             </div>
 
-            {/* Settings Gear Button to customize summary box background */}
+            {/* Settings Gear Button to customize summary box background - 오른쪽 끝으로 최대한 이동 */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setShowColorModal(true);
               }}
-              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white/80 hover:text-white transition-all"
+              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white/80 hover:text-white transition-all shrink-0"
               title="요약 박스 배경색 변경"
             >
               <Settings className="w-4 h-4" />

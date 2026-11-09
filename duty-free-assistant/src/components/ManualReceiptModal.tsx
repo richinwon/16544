@@ -363,9 +363,9 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             )}
           </div>
 
-          {/* 5. 품목명(70%) : 수량/용량(30%) 7:3 가로 비율 배치 */}
+          {/* 5. 품목명(60%) : 수량/용량(40%) 6:4 가로 비율 배치 */}
           <div className="flex gap-2 items-start">
-            <div className="w-[70%]">
+            <div className="w-[60%]">
               <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                 품목명 *
               </label>
@@ -378,7 +378,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
               />
             </div>
 
-            <div className="w-[30%]">
+            <div className="w-[40%]">
               <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
                 {isPerfume ? '용량 *' : '수량 *'}
               </label>

@@ -48,11 +48,20 @@ export const Screen4Report: React.FC = () => {
     const shareDescription = `총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} | 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)`;
     const currentUrl = window.location.href;
 
+    const fallbackNoKakao = () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(currentUrl);
+        }
+      } catch (e) {
+        console.error('Clipboard copy error:', e);
+      }
+      alert('카카오톡이 설치되어 있지 않습니다. 주소를 복사했어요! 원하시는 곳에 붙여넣기 해주세요!');
+    };
+
     try {
-      // 1순위: Kakao SDK 이용 (초기화 후 sendDefault 호출)
       if (window.Kakao) {
         if (!window.Kakao.isInitialized()) {
-          // 카카오 Javascript 키 초기화
           window.Kakao.init('863d61c2f4b562691da541c463ef4685');
         }
 
@@ -82,33 +91,10 @@ export const Screen4Report: React.FC = () => {
         }
       }
 
-      // 2순위: 네이티브 브라우저 Web Share API (모바일에서 카카오톡 등 설치된 앱 목록을 바로 호출)
-      if (navigator.share) {
-        navigator.share({
-          title: shareTitle,
-          text: shareDescription,
-          url: currentUrl,
-        }).catch(() => {
-          // 사용자가 취소한 경우 팝업을 띄우지 않음
-        });
-        return;
-      }
-
-      // 3순위: PC 환경 또는 Web Share 미지원 시 클립보드 복사 후 카카오톡 붙여넣기 지원
-      navigator.clipboard.writeText(`${shareTitle}\n${shareDescription}\n${currentUrl}`);
-      alert('리포트 내용이 클립보드에 복사되었습니다! 카카오톡 대화방에 붙여넣기(Ctrl+V)하세요.');
+      fallbackNoKakao();
     } catch (err) {
       console.error('Kakao share error:', err);
-      if (navigator.share) {
-        navigator.share({
-          title: shareTitle,
-          text: shareDescription,
-          url: currentUrl,
-        }).catch(() => {});
-      } else {
-        navigator.clipboard?.writeText(`${shareTitle}\n${shareDescription}\n${currentUrl}`);
-        alert('리포트 내용이 복사되었습니다! 카카오톡에 붙여넣어 공유하세요.');
-      }
+      fallbackNoKakao();
     }
   };
 

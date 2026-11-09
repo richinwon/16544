@@ -46,7 +46,7 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
           className="text-white/20"
         />
         
-        {/* Progress Indicator: 0% ~ 50% 파란색(#3b82f6), 50% 초과 시 파란색->빨간색 그라데이션 */}
+        {/* Progress Indicator: 0% ~ 50% 파란색(#3b82f6), 50% 초과 시 파란색->빨간색 그라데이션. 100% 초과 시에도 12시(100%)에서 빨간색으로 종료되어 1시 방향으로 넘어가지 않음 */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -55,7 +55,7 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
+          strokeLinecap={percentage >= 100 ? "butt" : "round"}
           fill="transparent"
           className="transition-all duration-700 ease-out"
         />

@@ -407,45 +407,49 @@ export const Screen3List: React.FC = () => {
       {activeTab === 'individual' && (
         <div className="space-y-3">
           {/* 상단 예상환급액 박스 (폴더 선택 + 엑셀 다운로드 바로 아래 배치 + 우측 예상 환급액 표시) */}
-          <div className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 flex items-center justify-between gap-2">
-            {/* 좌측: 폴더 선택 박스 및 바로 아래 엑셀 다운로드 버튼 배치 */}
-            <div className="flex flex-col items-start gap-1 shrink-0">
-              <FolderSelect />
-              {folders.length > 0 && (
-                <button
-                  onClick={() => {
-                    const rList = folderReceiptsMap[selectedFolder] || [];
-                    handleExportExcel(selectedFolder, rList);
-                  }}
-                  title="선택된 폴더 구매내역 엑셀 다운로드"
-                  className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 transition-colors shadow-xs active:scale-95 ml-1"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>엑셀 다운로드</span>
-                </button>
-              )}
+          <div className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              {/* 좌측: 폴더 선택 박스 및 바로 아래 엑셀 다운로드 버튼 배치 */}
+              <div className="flex flex-col items-start gap-1 shrink-0">
+                <FolderSelect />
+                {folders.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const rList = folderReceiptsMap[selectedFolder] || [];
+                      handleExportExcel(selectedFolder, rList);
+                    }}
+                    title="선택된 폴더 구매내역 엑셀 다운로드"
+                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 transition-colors shadow-xs active:scale-95 ml-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>엑셀 다운로드</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 우측: 예상 환급액 및 안내 문구 */}
+              <div className="text-right flex flex-col items-end shrink-0">
+                <div className="flex items-center justify-end gap-1.5">
+                  <span className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 shrink-0">
+                    <Coins className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> 예상 환급액
+                  </span>
+                  {refundStatus.isUnknownOrNonRefundable && (
+                    <span className="text-[10px] font-bold text-rose-500 flex items-center gap-0.5 shrink-0">
+                      <AlertCircle className="w-3 h-3" />
+                      사후환급여부 확인 필요
+                    </span>
+                  )}
+                  <span className={`text-xl sm:text-2xl font-black shrink-0 ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                    {refundStatus.amountStr}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* 우측: 예상 환급액 및 안내 문구 */}
-            <div className="text-right flex flex-col items-end min-w-0 flex-1">
-              <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                <span className="text-xs sm:text-sm font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 shrink-0">
-                  <Coins className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> 예상 환급액
-                </span>
-                {refundStatus.isUnknownOrNonRefundable && (
-                  <span className="text-[10px] font-bold text-rose-500 flex items-center gap-0.5 shrink-0">
-                    <AlertCircle className="w-3 h-3" />
-                    사후환급여부 확인 필요
-                  </span>
-                )}
-                <span className={`text-lg sm:text-xl font-black shrink-0 ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
-                  {refundStatus.amountStr}
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-1 whitespace-nowrap text-left sm:text-right w-full">
-                평균 환급 대행수수료를 차감한 예상 수령액입니다.
-              </p>
-            </div>
+            {/* 예상환급액 하단 "평균 환급~" 문구 왼쪽으로 이동하여 박스 밖으로 나가지 않도록 배치 */}
+            <p className="text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400 font-medium text-left">
+              평균 환급 대행수수료를 차감한 예상 수령액입니다.
+            </p>
           </div>
 
           {folders.length === 0 ? (
@@ -498,23 +502,9 @@ export const Screen3List: React.FC = () => {
                         {isCollapsed ? <Folder className="w-5 h-5" /> : <FolderOpen className="w-5 h-5" />}
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-sm font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
-                            {folderName}
-                          </h4>
-                          {/* 폴더명 바로 우측으로 이동된 컴팩트 엑셀 다운로드 버튼 (75% 축소 크기) */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleExportExcel(folderName, rList);
-                            }}
-                            title="여행별 구매내역 엑셀 다운로드"
-                            className="px-1.5 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 font-bold text-[9px] flex items-center gap-0.5 transition-colors border border-emerald-200/60 dark:border-emerald-800/60 shrink-0 self-center"
-                          >
-                            <Download className="w-2.5 h-2.5" />
-                            <span>엑셀</span>
-                          </button>
-                        </div>
+                        <h4 className="text-sm font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
+                          {folderName}
+                        </h4>
                         <p className="text-[11px] text-gray-400 mt-0.5">
                           영수증 {rList.length}건
                         </p>
@@ -1014,9 +1004,9 @@ export const Screen3List: React.FC = () => {
                 )}
               </div>
 
-              {/* 품목명(70%) : 수량/용량(30%) 7:3 가로 비율 배치 */}
+              {/* 품목명(60%) : 수량/용량(40%) 6:4 가로 비율 배치 */}
               <div className="flex gap-2 items-start">
-                <div className="w-[70%]">
+                <div className="w-[60%]">
                   <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                     품목명 *
                   </label>
@@ -1030,7 +1020,7 @@ export const Screen3List: React.FC = () => {
                   />
                 </div>
 
-                <div className="w-[30%]">
+                <div className="w-[40%]">
                   <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
                     {newItemCategory === 'perfume' ? '용량 *' : '수량 *'}
                   </label>
@@ -1287,9 +1277,9 @@ export const Screen3List: React.FC = () => {
                 )}
               </div>
 
-              {/* 품목명(70%) : 수량/용량(30%) 7:3 가로 비율 배치 */}
+              {/* 품목명(60%) : 수량/용량(40%) 6:4 가로 비율 배치 */}
               <div className="flex gap-2 items-start">
-                <div className="w-[70%]">
+                <div className="w-[60%]">
                   <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                     품목명 *
                   </label>
@@ -1302,7 +1292,7 @@ export const Screen3List: React.FC = () => {
                   />
                 </div>
 
-                <div className="w-[30%]">
+                <div className="w-[40%]">
                   <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
                     {editCategory === 'perfume' ? '용량 *' : '수량 *'}
                   </label>

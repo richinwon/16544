@@ -1,22 +1,18 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Folder } from 'lucide-react';
 
 interface FolderSelectProps {
   className?: string;
   showIcon?: boolean;
 }
 
-export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', showIcon = true }) => {
+export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '' }) => {
   const { folders, selectedFolder, setSelectedFolder } = useApp();
 
   if (folders.length === 0) return null;
 
   return (
     <div className={`relative inline-flex items-center ${className}`}>
-      {showIcon && (
-        <Folder className="w-3.5 h-3.5 text-blue-500 mr-1.5 flex-shrink-0" />
-      )}
       <select
         value={selectedFolder}
         onChange={(e) => setSelectedFolder(e.target.value)}
@@ -24,7 +20,7 @@ export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', show
       >
         {folders.map((folder) => (
           <option key={folder} value={folder}>
-            📁 {folder}
+            {folder}
           </option>
         ))}
       </select>
