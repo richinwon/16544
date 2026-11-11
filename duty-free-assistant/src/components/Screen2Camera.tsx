@@ -187,9 +187,9 @@ export const Screen2Camera: React.FC = () => {
       alert(`✨ 다국어 OCR 분석 완료!
 추출된 영수증 정보 기반으로 여행 폴더 [${createdFolderName}]가 자동 생성되고 등록되었습니다.`);
       setCurrentScreen(3);
-    } catch (err) {
-      console.error('OCR pipeline error:', err);
-      alert('영수증 인식 중 문제가 발생하여 수기 입력 모드로 전환합니다.');
+    } catch (err: any) {
+      console.warn('OCR verification failed:', err);
+      alert('영수증 인식이 어렵습니다. 수기 입력 모드로 전환합니다.');
       setShowManualModal(true);
     } finally {
       setIsAnalyzing(false);
