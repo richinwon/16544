@@ -29,8 +29,8 @@ export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', show
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 top-10 z-50 min-w-[170px] max-h-[220px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+          <div className="fixed inset-0 z-[100]" onClick={() => setIsOpen(false)} />
+          <div className="absolute left-0 top-10 z-[101] min-w-[170px] max-h-[220px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
             {folders.map((folder) => {
               const isSelected = folder === selectedFolder;
               return (

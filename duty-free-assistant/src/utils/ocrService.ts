@@ -203,54 +203,107 @@ export function parseReceiptText(text: string, confidence = 0): ParsedReceiptDat
   }
   if (!storeName) storeName = '영수증 발급 매장';
 
-  // 2) 날짜 추출 (YYYY-MM-DD 또는 YY/MM/DD)
+  // 2) 날짜 추출 (다양한 영수증 포맷 지원: YYYY-MM-DD, YY/MM/DD, DD/MM/YYYY, YYYY년 MM월 DD일 등)
   let detectedDate: string | undefined = undefined;
-  const dateRegex = /(20\d{2}|\d{2})[-/.년\s]+(0?[1-9]|1[0-2])[-/.월\s]+(0?[1-9]|[12]\d|3[01])/;
+  
+  // Format A: 2026-11-09 또는 26/11/09 (년-월-일)
+  const ymdRegex = /(20\d{2}|\d{2})[-/.년\s]+(0?[1-9]|1[0-2])[-/.월\s]+(0?[1-9]|[12]\d|3[01])/;
+  // Format B: 09/11/2026 또는 09-11-26 (일-월-년: 유럽/동남아 영수증 다수)
+  const dmyRegex = /(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.](20\d{2}|\d{2})/;
+
   for (const line of lines) {
-    const match = line.match(dateRegex);
-    if (match) {
-      let year = match[1];
+    const matchYMD = line.match(ymdRegex);
+    if (matchYMD) {
+      let year = matchYMD[1];
       if (year.length === 2) year = '20' + year;
-      const month = match[2].padStart(2, '0');
-      const day = match[3].padStart(2, '0');
-      detectedDate = `${year}-${month}-${day}`;
-      break;
+      const month = matchYMD[2].padStart(2, '0');
+      const day = matchYMD[3].padStart(2, '0');
+      const yNum = parseInt(year);
+      if (yNum >= 2020 && yNum <= 2035) {
+        detectedDate = `${year}-${month}-${day}`;
+        break;
+      }
+    }
+
+    const matchDMY = line.match(dmyRegex);
+    if (matchDMY) {
+      let year = matchDMY[3];
+      if (year.length === 2) year = '20' + year;
+      const month = matchDMY[2].padStart(2, '0');
+      const day = matchDMY[1].padStart(2, '0');
+      const yNum = parseInt(year);
+      if (yNum >= 2020 && yNum <= 2035) {
+        detectedDate = `${year}-${month}-${day}`;
+        break;
+      }
     }
   }
 
-  // 3) 통화 및 국가/도시 추정
+  // 3) 통화 및 국가/도시 추정 (키워드 매칭 정밀도 강화)
   let detectedCurrency: 'USD' | 'KRW' | 'JPY' | 'EUR' | 'CNY' = 'USD';
   let detectedCountry = '';
   let detectedCity = '';
 
   const lowerText = text.toLowerCase();
 
+  // 일본 체크 (지명 우선 매칭)
   if (
     /[\u3040-\u309F\u30A0-\u30FF]/.test(text) ||
-    lowerText.includes('yen') ||
+    lowerText.includes('japan') ||
     lowerText.includes('jpy') ||
     text.includes('¥') ||
     text.includes('円') ||
-    lowerText.includes('tokyo') ||
-    lowerText.includes('osaka') ||
-    text.includes('도쿄') ||
-    text.includes('오사카') ||
-    text.includes('일본')
+    text.includes('일본') ||
+    lowerText.includes('tokyo') || lowerText.includes('osaka') || lowerText.includes('fukuoka') || lowerText.includes('kyoto') || lowerText.includes('sapporo') ||
+    text.includes('도쿄') || text.includes('오사카') || text.includes('후쿠오카') || text.includes('교토') || text.includes('삿포로')
   ) {
     detectedCurrency = 'JPY';
     detectedCountry = '일본';
     if (lowerText.includes('osaka') || text.includes('오사카') || text.includes('大阪')) detectedCity = '오사카';
     else if (lowerText.includes('fukuoka') || text.includes('후쿠오카') || text.includes('福岡')) detectedCity = '후쿠오카';
+    else if (lowerText.includes('kyoto') || text.includes('교토') || text.includes('京都')) detectedCity = '교토';
+    else if (lowerText.includes('sapporo') || text.includes('삿포로') || text.includes('札幌')) detectedCity = '삿포로';
+    else if (lowerText.includes('okinawa') || text.includes('오키나와') || text.includes('沖縄')) detectedCity = '오키나와';
     else detectedCity = '도쿄';
-  } else if (text.includes('€') || lowerText.includes('eur') || lowerText.includes('paris') || text.includes('파리') || text.includes('프랑스')) {
+  } 
+  // 프랑스 / 유럽 체크
+  else if (text.includes('€') || lowerText.includes('eur') || lowerText.includes('paris') || lowerText.includes('france') || text.includes('파리') || text.includes('프랑스')) {
     detectedCurrency = 'EUR';
     detectedCountry = '프랑스';
     detectedCity = '파리';
-  } else if (/[\u4E00-\u9FA5]/.test(text) && (lowerText.includes('cny') || text.includes('元') || text.includes('중국'))) {
+  }
+  // 이탈리아 체크
+  else if (lowerText.includes('rome') || lowerText.includes('roma') || lowerText.includes('milan') || lowerText.includes('italy') || text.includes('로마') || text.includes('밀라노') || text.includes('이탈리아')) {
+    detectedCurrency = 'EUR';
+    detectedCountry = '이탈리아';
+    detectedCity = lowerText.includes('milan') || text.includes('밀라노') ? '밀라노' : '로마';
+  }
+  // 태국 체크
+  else if (/[\u0E00-\u0E7F]/.test(text) || lowerText.includes('thb') || lowerText.includes('baht') || lowerText.includes('bangkok') || lowerText.includes('thailand') || text.includes('방콕') || text.includes('태국')) {
+    detectedCurrency = 'USD';
+    detectedCountry = '태국';
+    detectedCity = lowerText.includes('phuket') || text.includes('푸켓') ? '푸켓' : '방콕';
+  }
+  // 베트남 체크
+  else if (/[À-ỹ]/.test(text) || lowerText.includes('vnd') || lowerText.includes('vietnam') || lowerText.includes('hanoi') || lowerText.includes('da nang') || text.includes('다낭') || text.includes('하노이') || text.includes('베트남')) {
+    detectedCurrency = 'USD';
+    detectedCountry = '베트남';
+    detectedCity = lowerText.includes('da nang') || text.includes('다낭') ? '다낭' : '하노이';
+  }
+  // 대만 체크
+  else if (lowerText.includes('twd') || lowerText.includes('taipei') || lowerText.includes('taiwan') || text.includes('대만') || text.includes('타이베이')) {
+    detectedCurrency = 'USD';
+    detectedCountry = '대만';
+    detectedCity = '타이베이';
+  }
+  // 중국 체크
+  else if (/[\u4E00-\u9FA5]/.test(text) && (lowerText.includes('cny') || text.includes('元') || lowerText.includes('china') || text.includes('중국') || lowerText.includes('shanghai') || text.includes('상하이') || text.includes('베이징'))) {
     detectedCurrency = 'CNY';
     detectedCountry = '중국';
-    detectedCity = '상하이';
-  } else if (text.includes('원') || lowerText.includes('krw') || text.includes('₩')) {
+    detectedCity = lowerText.includes('beijing') || text.includes('베이징') ? '베이징' : '상하이';
+  }
+  // 한국 체크
+  else if (text.includes('원') || lowerText.includes('krw') || text.includes('₩') || text.includes('사업자') || text.includes('부가세') || text.includes('서울')) {
     detectedCurrency = 'KRW';
     detectedCountry = '대한민국';
     detectedCity = '서울';

@@ -124,13 +124,13 @@ export const Screen1Dashboard: React.FC = () => {
       <div 
         className={`relative overflow-hidden rounded-3xl ${currentPreset.className} text-white p-5 shadow-xl shadow-indigo-950/20 transition-colors duration-300`}
       >
-        {/* Top bar inside box: 폴더 선택 박스 좌측 상단 배치, status badge, and Settings Gear Icon */}
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex items-center gap-1.5">
+        {/* Top bar inside box: 좌측 폴더선택 박스는 왼쪽으로, 우측 초과금액/톱니바퀴는 오른쪽 끝으로 여백 내 배치 */}
+        <div className="flex justify-between items-center mb-3 -mx-1">
+          <div className="flex items-center gap-1.5 min-w-0">
             <FolderSelect />
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 pl-1">
             <div className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 whitespace-nowrap shrink-0 ${
               duty.isOverLimit 
                 ? 'bg-rose-500/25 text-rose-300 border border-rose-400/40' 

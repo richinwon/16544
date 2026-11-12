@@ -51,17 +51,20 @@ export const Screen4Report: React.FC = () => {
   };
 
   const handleKakaoShare = async () => {
-    const currentUrl = window.location.href;
+    const currentUrl = window.location.href.split('#')[0];
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-    // 1) 클립보드 복사
+    // 1) 클립보드 복사 (순수 텍스트 URL로 복사)
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(currentUrl);
       } else {
         const textarea = document.createElement('textarea');
         textarea.value = currentUrl;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
         document.body.appendChild(textarea);
+        textarea.focus();
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
@@ -70,18 +73,53 @@ export const Screen4Report: React.FC = () => {
       console.warn('Clipboard write error:', err);
     }
 
-    // 2) 토스트/알림 노출
+    // 2) 토스트 알림 노출
     showToast('주소를 복사했어요!');
 
-    // 3) 환경별 분기 처리
+    // 3) 모바일/PC 환경별 카카오톡 연결 분기
     if (isMobile) {
-      // 모바일: kakaolink 커스텀 스킴 실행
+      // Kakao SDK 정식 공유(sendDefault) 시도
+      try {
+        if (window.Kakao) {
+          if (!window.Kakao.isInitialized()) {
+            window.Kakao.init('863d61c2f4b562691da541c463ef4685');
+          }
+          if (window.Kakao.Share) {
+            window.Kakao.Share.sendDefault({
+              objectType: 'feed',
+              content: {
+                title: `[면세비서] 면세 리포트 (${selectedFolder})`,
+                description: `총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} | 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)`,
+                imageUrl: 'https://tax-secretary-4db36.web.app/favicon.svg',
+                link: {
+                  mobileWebUrl: currentUrl,
+                  webUrl: currentUrl,
+                },
+              },
+              buttons: [
+                {
+                  title: '면세 리포트 확인하기',
+                  link: {
+                    mobileWebUrl: currentUrl,
+                    webUrl: currentUrl,
+                  },
+                },
+              ],
+            });
+            return;
+          }
+        }
+      } catch (kErr) {
+        console.warn('Kakao SDK share failed, fallback to scheme:', kErr);
+      }
+
+      // Kakao SDK 미동작 시 카카오톡 앱 실행
       setTimeout(() => {
-        window.location.href = 'kakaolink://';
-      }, 500);
+        window.location.href = 'kakaotalk://';
+      }, 400);
     } else {
-      // PC 환경: 안내 메시지만 노출
-      alert('주소를 복사했어요! 원하시는 메신저나 채팅방에 붙여넣기(Ctrl+V)하세요.');
+      // PC 환경: 주소 복사 완료 안내
+      alert('주소를 복사했어요! 카카오톡이나 원하는 대화방에 붙여넣기(Ctrl+V)하세요.');
     }
   };
 

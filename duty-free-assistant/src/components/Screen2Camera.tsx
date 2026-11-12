@@ -151,15 +151,15 @@ export const Screen2Camera: React.FC = () => {
           setOcrStatus(`[${idx + 1}/${capturedImages.length}] ${msg}`);
         });
 
-        // 추출된 영수증 정보(날짜, 국가, 도시) 우선으로 폴더 자동 생성
+        // 추출된 영수증 정보(날짜, 국가, 도시)를 최우선으로 적용 (영수증에 날짜/국가/도시가 있으면 무조건 우선)
         const finalDate = parsed.date || manualDate || new Date().toISOString().split('T')[0];
         const finalCountry = parsed.country || manualCountry || '일본';
         const finalCity = parsed.city || manualCity || '도쿄';
 
-        // 앱의 기본 여행 설정값도 인식된 결과로 동기화
-        if (parsed.country && !manualCountry) setManualCountry(parsed.country);
-        if (parsed.city && !manualCity) setManualCity(parsed.city);
-        if (parsed.date && !manualDate) setManualDate(parsed.date);
+        // 추출된 최신 여행지 정보를 Context 상태에도 업데이트
+        if (parsed.country) setManualCountry(parsed.country);
+        if (parsed.city) setManualCity(parsed.city);
+        if (parsed.date) setManualDate(parsed.date);
 
         const autoFolderName = generateFolderName(finalDate, finalCountry, finalCity);
         createdFolderName = autoFolderName;
@@ -167,7 +167,7 @@ export const Screen2Camera: React.FC = () => {
         const totalUSD = parsed.items.reduce((sum, item) => sum + (item.priceUSD || item.priceLocal || 0), 0);
 
         const newReceipt: Receipt = {
-          id: 'receipt-' + Date.now() + '-' + idx,
+          id: 'receipt-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substring(2, 7),
           date: finalDate,
           country: finalCountry,
           city: finalCity,
@@ -184,9 +184,15 @@ export const Screen2Camera: React.FC = () => {
 
       setOcrProgress(100);
       setOcrStatus('분석 완료!');
-      alert(`✨ 다국어 OCR 분석 완료!
-추출된 영수증 정보 기반으로 여행 폴더 [${createdFolderName}]가 자동 생성되고 등록되었습니다.`);
-      setCurrentScreen(3);
+
+      // 저장 완료 후 사용자 안내 및 구매목록 화면(Screen 3)으로 부드럽게 전환
+      alert(`✨ 영수증 분석 완료!\n여행 폴더 [${createdFolderName}]에 안전하게 저장되었습니다.`);
+      
+      // 상태 갱신 후 화면 전환
+      setTimeout(() => {
+        setCapturedImages([]);
+        setCurrentScreen(3);
+      }, 100);
     } catch (err: any) {
       console.warn('OCR verification failed:', err);
       alert('영수증 인식이 어렵습니다. 수기 입력 모드로 전환합니다.');
@@ -344,7 +350,7 @@ export const Screen2Camera: React.FC = () => {
           <span>{isContinuousMode ? '여러파일선택' : '파일선택'}</span>
         </button>
 
-        {/* 단일 모드 카메라 촬영 input */}
+        {/* 1. 순수 카메라 촬영 input: capture="environment"로 네이티브/웹 카메라 즉시 구동 */}
         <input
           ref={cameraInputRef}
           type="file"
@@ -354,11 +360,11 @@ export const Screen2Camera: React.FC = () => {
           className="hidden"
         />
 
-        {/* 파일 업로드 input (단일 / 다중 선택) */}
+        {/* 2. 순수 파일 선택 input: capture 속성을 절대 넣지 않아 모바일 갤러리/파일 탐색기 팝업 호출 */}
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/png,image/jpeg,image/jpg,image/webp,image/heic,image/*"
           multiple={isContinuousMode}
           onChange={handleFileChange}
           className="hidden"
