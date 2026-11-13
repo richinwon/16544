@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "duty-free-assistant/dist",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",
