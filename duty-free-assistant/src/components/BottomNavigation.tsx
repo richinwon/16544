@@ -27,17 +27,19 @@ export const BottomNavigation: React.FC = () => {
 
   return (
     <div 
-      className="fixed bottom-0 left-0 right-0 z-[999] flex justify-center pointer-events-none"
+      className="fixed bottom-0 left-0 right-0 z-[9999] flex justify-center pointer-events-none"
       style={{ 
         position: 'fixed', 
         bottom: 0, 
         left: 0, 
         right: 0, 
-        zIndex: 999,
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)'
+        zIndex: 9999
       }}
     >
-      <div className="w-full max-w-[480px] bg-white dark:bg-gray-900 border-t border-gray-200/90 dark:border-gray-800 px-1.5 py-2 flex justify-around items-center pointer-events-auto shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+      <div 
+        className="w-full max-w-[480px] bg-white dark:bg-gray-900 border-t border-gray-200/90 dark:border-gray-800 px-1.5 pt-2 flex justify-around items-center pointer-events-auto shadow-[0_-4px_25px_rgba(0,0,0,0.12)]"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 6px)' }}
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentScreen === item.screen;
