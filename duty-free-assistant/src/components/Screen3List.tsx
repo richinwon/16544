@@ -477,8 +477,8 @@ export const Screen3List: React.FC = () => {
                     </span>
                   )}
                 </div>
-                {/* 예상환급액 텍스트보다 금액 표시부가 조금 더 크게 보이도록(text-base sm:text-lg) 조정 */}
-                <span className={`text-[15px] sm:text-[18px] font-black mt-0.5 truncate max-w-full tracking-tight ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                {/* 예상환급액 텍스트보다 금액 표시부가 확실히 더 크게(text-[18px] sm:text-[21px]) 보이도록 명확히 조정 */}
+                <span className={`text-[18px] sm:text-[21px] font-black mt-0.5 truncate max-w-full tracking-tight leading-snug ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
                   {refundStatus.amountStr}
                 </span>
                 {/* 금액 아래쪽으로 위치한 안내 문구: 박스 밖으로 삐져나가지 않도록 자동 줄바꿈 */}

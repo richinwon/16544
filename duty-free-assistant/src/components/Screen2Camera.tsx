@@ -306,28 +306,21 @@ export const Screen2Camera: React.FC = () => {
         </label>
       </div>
 
-      {/* Camera Viewport / Upload Box */}
+      {/* Camera Viewport / Upload Box - 카메라 촬영과 파일 선택 명확한 물리적 분리 */}
       <div 
-        onClick={() => {
-          if (isContinuousMode) {
-            startCamera();
-          } else {
-            cameraInputRef.current?.click();
-          }
-        }}
-        className="cursor-pointer border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-blue-500 rounded-3xl p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-gray-800/80 transition-all group"
+        className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-gray-800/80 transition-all shadow-xs"
       >
+        {/* 카메라 아이콘 버튼: 누르면 무조건 카메라(실시간 뷰파인더 또는 네이티브 카메라) 구동 */}
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             if (isContinuousMode) {
               startCamera();
             } else {
               cameraInputRef.current?.click();
             }
           }}
-          className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 group-hover:scale-110 active:scale-95 transition-transform shadow-md"
+          className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 hover:scale-105 active:scale-95 transition-transform shadow-md"
           title={isContinuousMode ? "연속 촬영 카메라 시작" : "카메라 촬영"}
         >
           <Camera className="w-8 h-8" />
@@ -336,15 +329,16 @@ export const Screen2Camera: React.FC = () => {
           {isContinuousMode ? '여러 장의 영수증을 촬영합니다' : '영수증을 촬영합니다'}
         </h3>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : '카메라 아이콘을 누르면 카메라가 실행됩니다'}
+          {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : '카메라 아이콘을 누르면 즉시 카메라가 구동됩니다'}
         </p>
+
+        {/* 파일선택 버튼: 누르면 절대로 카메라를 구동하지 않고 기기별 시스템 파일 선택 창(갤러리/파일 탐색기) 팝업 */}
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             fileInputRef.current?.click();
           }}
-          className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+          className="mt-4 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
         >
           <Upload className="w-3.5 h-3.5" />
           <span>{isContinuousMode ? '여러파일선택' : '파일선택'}</span>

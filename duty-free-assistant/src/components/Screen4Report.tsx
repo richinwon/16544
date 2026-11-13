@@ -54,7 +54,7 @@ export const Screen4Report: React.FC = () => {
     const currentUrl = window.location.href.split('#')[0];
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-    // 1) 클립보드 복사 (순수 텍스트 URL로 복사)
+    // 1) 클립보드에 접속 주소 복사
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(currentUrl);
@@ -62,7 +62,7 @@ export const Screen4Report: React.FC = () => {
         const textarea = document.createElement('textarea');
         textarea.value = currentUrl;
         textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
+        textarea.style.left = '-9999px';
         document.body.appendChild(textarea);
         textarea.focus();
         textarea.select();
@@ -76,21 +76,24 @@ export const Screen4Report: React.FC = () => {
     // 2) 토스트 알림 노출
     showToast('주소를 복사했어요!');
 
-    // 3) 모바일/PC 환경별 카카오톡 연결 분기
+    // 3) 카카오톡 앱 대화상대 선택창 연동
     if (isMobile) {
-      // Kakao SDK 정식 공유(sendDefault) 시도
+      // 1차 시도: Kakao Javascript SDK 정식 카카오톡 공유
+      let sdkSuccess = false;
       try {
         if (window.Kakao) {
           if (!window.Kakao.isInitialized()) {
             window.Kakao.init('863d61c2f4b562691da541c463ef4685');
           }
-          if (window.Kakao.Share) {
+          if (window.Kakao.Share && window.Kakao.Share.sendDefault) {
             window.Kakao.Share.sendDefault({
               objectType: 'feed',
               content: {
                 title: `[면세비서] 면세 리포트 (${selectedFolder})`,
                 description: `총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} | 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)`,
-                imageUrl: 'https://tax-secretary-4db36.web.app/favicon.svg',
+                imageUrl: 'https://tax-secretary-4db36.web.app/hero.png',
+                imageWidth: 600,
+                imageHeight: 315,
                 link: {
                   mobileWebUrl: currentUrl,
                   webUrl: currentUrl,
@@ -106,19 +109,52 @@ export const Screen4Report: React.FC = () => {
                 },
               ],
             });
-            return;
+            sdkSuccess = true;
           }
         }
       } catch (kErr) {
-        console.warn('Kakao SDK share failed, fallback to scheme:', kErr);
+        console.warn('Kakao SDK share failed:', kErr);
       }
 
-      // Kakao SDK 미동작 시 카카오톡 앱 실행
-      setTimeout(() => {
-        window.location.href = 'kakaotalk://';
-      }, 400);
+      // 2차 시도: SDK 연동이 트리거되지 않았을 경우 kakaolink 커스텀 스킴으로 카카오톡 대화상대 선택창 직접 호출
+      if (!sdkSuccess) {
+        setTimeout(() => {
+          window.location.href = 'kakaolink://send?appkey=863d61c2f4b562691da541c463ef4685&appver=1.0';
+        }, 300);
+      }
     } else {
-      // PC 환경: 주소 복사 완료 안내
+      // PC 브라우저 환경: 카카오톡 웹 공유 또는 알림
+      try {
+        if (window.Kakao && window.Kakao.Share && window.Kakao.Share.sendDefault) {
+          if (!window.Kakao.isInitialized()) {
+            window.Kakao.init('863d61c2f4b562691da541c463ef4685');
+          }
+          window.Kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+              title: `[면세비서] 면세 리포트 (${selectedFolder})`,
+              description: `총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} | 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)`,
+              imageUrl: 'https://tax-secretary-4db36.web.app/hero.png',
+              link: {
+                mobileWebUrl: currentUrl,
+                webUrl: currentUrl,
+              },
+            },
+            buttons: [
+              {
+                title: '면세 리포트 확인하기',
+                link: {
+                  mobileWebUrl: currentUrl,
+                  webUrl: currentUrl,
+                },
+              },
+            ],
+          });
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
       alert('주소를 복사했어요! 카카오톡이나 원하는 대화방에 붙여넣기(Ctrl+V)하세요.');
     }
   };
