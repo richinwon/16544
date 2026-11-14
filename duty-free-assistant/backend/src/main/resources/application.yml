@@ -1,0 +1,15 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: duty-free-backend
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+google:
+  cloud:
+    project-id: tax-secretary-4db36
+    location: asia-northeast3

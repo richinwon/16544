@@ -182,10 +182,10 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
     const tax = isTaxExcludedCategory ? 0 : (parseFloat(manualTaxLocal) || 0);
     const priceUSD = convertCurrencyToUSD(price, manualCurrency);
 
-    // 사용자가 입력한 날짜, 국가, 도시를 전역 여행 폴더 정보로도 동기화 갱신
-    setTripDate(manualDate);
-    setTripCountry(manualCountry.trim());
-    setTripCity(manualCity.trim());
+    // 영수증 저장 직후 전역 여행지 설정 입력값은 깨끗하게 초기화
+    setTripDate('');
+    setTripCountry('');
+    setTripCity('');
 
     const finalFolder = targetFolder;
     const q = isPerfume ? 1 : Math.max(1, Math.floor(manualQuantity || 1));
@@ -218,6 +218,18 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
     };
 
     addReceipt(newReceipt);
+
+    // 모달 내부 입력값도 모두 초기화
+    setManualDate('');
+    setManualCountry('');
+    setManualCity('');
+    setManualStore('');
+    setManualItemName('');
+    setManualPriceLocal('');
+    setManualTaxLocal('');
+    setManualQuantity(1);
+    setManualPerfumeMl(50);
+
     showToast(`영수증이 폴더 [${finalFolder}]에 등록되었습니다.`, 'success');
     
     // 약간의 딜레이 후 모달 닫기
@@ -304,7 +316,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             <CustomDatePicker
               value={manualDate}
               onChange={(newDate) => setManualDate(newDate)}
-              placeholder="날짜:날짜"
+              placeholder="날짜"
             />
           </div>
 

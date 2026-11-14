@@ -70,6 +70,51 @@ export async function preprocessReceiptImage(imageSrc: string): Promise<string> 
   });
 }
 
+/**
+ * 영수증 원본 이미지를 로컬스토리지(5MB 제한) 및 Firestore(1MB 제한)에
+ * 안전하게 저장하기 위한 경량 썸네일 압축 함수 (최대 800px, JPEG 0.6)
+ */
+export async function compressReceiptThumbnail(imageSrc: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        let width = img.naturalWidth || img.width || 800;
+        let height = img.naturalHeight || img.height || 800;
+
+        const MAX_DIM = 800;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(imageSrc.length < 300000 ? imageSrc : '');
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      } catch {
+        resolve(imageSrc.length < 300000 ? imageSrc : '');
+      }
+    };
+    img.onerror = () => {
+      resolve(imageSrc.length < 300000 ? imageSrc : '');
+    };
+    img.src = imageSrc;
+  });
+}
+
 export interface ParsedReceiptData {
   rawText: string;
   confidence: number;
@@ -85,23 +130,23 @@ export interface ParsedReceiptData {
 
 /**
  * 2. 영수증 앵커 키워드 검증 (Anchor Verification)
- * 영수증에서 흔히 등장하는 결제, 세금, 합계, 일시, 통화 기호 등
+ * 단일 글자('원', '$', '¥' 등 OCR 노이즈로 오인식되기 쉬운 문자)는 제외하고,
+ * 실제 영수증에서만 등장하는 명확한 핵심 키워드만 검증합니다.
  */
 export function hasReceiptKeywords(text: string): boolean {
   const keywords = [
-    // 한국어
-    '합계', '총액', '소계', '금액', '세액', '부가세', '결제', '영수증', '원', '과세', '면세', '일시',
-    // 영어
-    'total', 'subtotal', 'amount', 'tax', 'vat', 'balance', 'cash', 'card', 'visa', 'master',
-    'receipt', 'change', 'date', 'price', 'qty', 'discount',
-    // 일본어
-    '合計', '小計', '税込', '税抜', '消費税', 'お預り', 'お釣り', 'レシート', '領収書', '円',
-    // 베트남어
-    'tổng', 'thành tiền', 'tiền mặt', 'hóa đơn', 'thuế', 'vat', 'vnd',
-    // 태국어
-    'รวม', 'ภาษี', 'บาท',
-    // 통화 기호
-    '$', '¥', '€', '£', '₩', '₫', '฿'
+    // 한국어 영수증 필수 키워드
+    '합계', '총액', '소계', '결제금액', '받을금액', '받은금액', '부가세', '부가가치세', '결제', '영수증',
+    '과세', '면세', '승인번호', '가맹점', '사업자', '단가', '수량', '신용카드', '카드번호', '거스름돈',
+    // 영어 영수증 필수 키워드
+    'total', 'subtotal', 'sub-total', 'amount', 'tax', 'vat', 'gst', 'balance', 'cash', 'visa', 'mastercard',
+    'receipt', 'invoice', 'change', 'price', 'qty', 'discount', 'payment', 'thank you',
+    // 일본어 영수증 필수 키워드
+    '合計', '小計', '税込', '税抜', '消費税', 'お預り', 'お預かり', 'お釣り', 'レシート', '領収書', '領収証', '買上', '内税', '外税',
+    // 베트남어 / 태국어 / 중국어 영수증 키워드
+    'tổng', 'thành tiền', 'tiền mặt', 'hóa đơn', 'thuế',
+    'รวม', 'ภาษี', 'ใบเสร็จ',
+    '合计', '总计', '小计', '发票', '收据'
   ];
   const lowerText = text.toLowerCase();
   return keywords.some(kw => lowerText.includes(kw));
@@ -122,7 +167,7 @@ export async function parseWithGeminiFlashLite(
   try {
     onProgress?.(30, 'Gemini 2.5 Flash-Lite Java 백엔드 연동 중...');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4초 타임아웃
+    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5초 타임아웃
 
     const resp = await fetch(`${backendUrl}/api/receipts/parse-base64`, {
       method: 'POST',
@@ -134,11 +179,16 @@ export async function parseWithGeminiFlashLite(
 
     if (resp.ok) {
       const data = await resp.json();
+      if (data.is_receipt === false || !Array.isArray(data.items) || data.items.length === 0 || Number(data.total_amount) <= 0) {
+        throw new Error('NOT_A_RECEIPT');
+      }
       onProgress?.(80, '백엔드 Gemini 2.5 Flash-Lite 구조화 데이터 수신 완료!');
       return convertGeminiDataToParsedReceipt(data, 'Backend Vertex AI Gemini 2.5 Flash-Lite');
     }
-  } catch (backendErr) {
-    // 백엔드가 아직 실행되지 않은 경우 조용히 클라이언트 직결 또는 OCR로 전환
+  } catch (backendErr: any) {
+    if (backendErr?.message === 'NOT_A_RECEIPT') {
+      throw new Error('RECEIPT_RECOGNITION_FAILED');
+    }
     console.info('Backend service not reached, falling back to direct API / Tesseract:', backendErr);
   }
 
@@ -155,7 +205,7 @@ export async function parseWithGeminiFlashLite(
         base64Data = parts[1];
       }
 
-      // Gemini 2.5 Flash-Lite API 호출 (Structured Outputs 강제)
+      // Gemini 2.5 Flash-Lite API 호출 (Structured Outputs 강제 + 영수증 진위 판별)
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiApiKey}`;
       const payload = {
         contents: [
@@ -168,7 +218,7 @@ export async function parseWithGeminiFlashLite(
                 }
               },
               {
-                text: "다국어 영수증 이미지에서 6가지 필수 항목(date [YYYY-MM-DD], store_name, items [name 한국어 번역, quantity 기본 1, price 숫자], tax 숫자, total_amount 숫자, currency 통화코드)을 지정된 스키마에 따라 JSON으로 추출하세요."
+                text: "이미지가 실제 영수증(구매 내역서/계산서)인지 먼저 판별(is_receipt)하세요. 실제 영수증이 아니라면 is_receipt를 false로, items를 빈 배열로, total_amount를 0으로 반환하세요. 실제 영수증인 경우에만 6가지 필수 항목(date [YYYY-MM-DD], store_name, items [name 한국어 번역, quantity 기본 1, price 숫자], tax 숫자, total_amount 숫자, currency 통화코드)을 지정된 스키마에 따라 JSON으로 추출하세요."
               }
             ]
           }
@@ -178,6 +228,7 @@ export async function parseWithGeminiFlashLite(
           responseSchema: {
             type: "OBJECT",
             properties: {
+              is_receipt: { type: "BOOLEAN", description: "True ONLY if the image is a real purchase receipt or invoice" },
               date: { type: "STRING", description: "YYYY-MM-DD format date" },
               store_name: { type: "STRING", description: "Store name on receipt" },
               items: {
@@ -196,7 +247,7 @@ export async function parseWithGeminiFlashLite(
               total_amount: { type: "NUMBER", description: "Total payment amount" },
               currency: { type: "STRING", description: "Currency code e.g. JPY, USD, EUR, KRW" }
             },
-            required: ["date", "store_name", "items", "tax", "total_amount", "currency"]
+            required: ["is_receipt", "date", "store_name", "items", "tax", "total_amount", "currency"]
           }
         }
       };
@@ -212,11 +263,17 @@ export async function parseWithGeminiFlashLite(
         const jsonText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
         if (jsonText) {
           const parsedJson = JSON.parse(jsonText);
+          if (parsedJson.is_receipt === false || !Array.isArray(parsedJson.items) || parsedJson.items.length === 0 || Number(parsedJson.total_amount) <= 0) {
+            throw new Error('NOT_A_RECEIPT');
+          }
           onProgress?.(85, 'Gemini 2.5 Flash-Lite 구조화 데이터 파싱 성공!');
           return convertGeminiDataToParsedReceipt(parsedJson, 'Gemini 2.5 Flash-Lite');
         }
       }
-    } catch (apiErr) {
+    } catch (apiErr: any) {
+      if (apiErr?.message === 'NOT_A_RECEIPT') {
+        throw new Error('RECEIPT_RECOGNITION_FAILED');
+      }
       console.warn('Direct Gemini API call failed, falling back to Tesseract:', apiErr);
     }
   }
@@ -299,7 +356,10 @@ export async function recognizeReceipt(
       onProgress?.(100, 'Gemini Flash-Lite 분석 완료!');
       return geminiResult;
     }
-  } catch (geminiError) {
+  } catch (geminiError: any) {
+    if (geminiError?.message === 'RECEIPT_RECOGNITION_FAILED') {
+      throw geminiError;
+    }
     console.warn('Gemini 2.5 Flash-Lite pipeline skipped:', geminiError);
   }
 
@@ -355,9 +415,10 @@ export async function recognizeReceipt(
   onProgress?.(85, '신뢰도 및 영수증 앵커 키워드 검증 중...');
 
   const hasAnchor = hasReceiptKeywords(text);
-  const isValidLength = text.trim().length >= 10;
+  const isValidLength = text.trim().length >= 15;
 
-  if (!isValidLength || (!hasAnchor && confidence < 40)) {
+  // 영수증 필수 키워드(hasAnchor)가 없거나 신뢰도가 기준 미달이면 무조건 인식 실패 처리
+  if (!isValidLength || !hasAnchor || confidence < 45) {
     console.warn('OCR Validation Failed:', { confidence, hasAnchor, length: text.length });
     throw new Error('RECEIPT_RECOGNITION_FAILED');
   }
@@ -371,6 +432,9 @@ export async function recognizeReceipt(
  */
 export function parseReceiptText(text: string, confidence = 0): ParsedReceiptData {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) {
+    throw new Error('RECEIPT_RECOGNITION_FAILED');
+  }
 
   // 1) 상호명 추출 (상단 라인 중 의미 있는 텍스트)
   let storeName = '';
@@ -492,29 +556,31 @@ export function parseReceiptText(text: string, confidence = 0): ParsedReceiptDat
     detectedCity = '서울';
   }
 
+  const rateToUSD = detectedCurrency === 'KRW' ? 1380 : detectedCurrency === 'JPY' ? 153.5 : detectedCurrency === 'CNY' ? 7.23 : detectedCurrency === 'EUR' ? 0.92 : 1;
+
   // 4) 금액 추출 및 Total/Subtotal/Tax 패턴 탐색
   let detectedTotal = 0;
   let detectedTax = 0;
 
   // 라인별로 '합계/TOTAL' 키워드와 함께 등장한 금액 우선 탐색
-  const totalKeywords = ['합계', 'total', '총액', '소계', 'subtotal', 'amount', '결제금액', 'お預り', '合計'];
+  const totalKeywords = ['합계', 'total', '총액', '소계', 'subtotal', 'amount', '결제금액', '받을금액', '받은금액', 'お預り', 'お預かり', '合計', '小計', '税込'];
   for (const line of lines) {
     const lLower = line.toLowerCase();
     if (totalKeywords.some(kw => lLower.includes(kw))) {
       const nums = line.match(/[\d,]+(\.\d{1,2})?/g);
       if (nums && nums.length > 0) {
         const val = parseFloat(nums[nums.length - 1].replace(/,/g, ''));
-        if (!isNaN(val) && val > 0 && val > detectedTotal) {
+        if (!isNaN(val) && val > 0 && val < 50000000 && val > detectedTotal) {
           detectedTotal = val;
         }
       }
     }
     // Tax 탐색
-    if (lLower.includes('tax') || lLower.includes('vat') || lLower.includes('세액') || lLower.includes('消費税')) {
+    if (lLower.includes('tax') || lLower.includes('vat') || lLower.includes('세액') || lLower.includes('부가세') || lLower.includes('消費税')) {
       const nums = line.match(/[\d,]+(\.\d{1,2})?/g);
       if (nums && nums.length > 0) {
         const val = parseFloat(nums[nums.length - 1].replace(/,/g, ''));
-        if (!isNaN(val) && val > 0) {
+        if (!isNaN(val) && val > 0 && val < 10000000) {
           detectedTax = val;
         }
       }
@@ -563,40 +629,49 @@ export function parseReceiptText(text: string, confidence = 0): ParsedReceiptDat
       }
 
       const itemName = line.replace(/[\d,.$¥€₩]/g, '').trim() || '인식된 품목';
-      if (itemName.length >= 2) {
-        items.push({
+      if (itemName.length >= 2 && (rowPrice > 0 || detectedTotal > 0)) {
+        const finalLocalPrice = rowPrice > 0 ? rowPrice : detectedTotal;
+        const itemObj: ProductItem = {
           id: 'ocr-' + Date.now() + '-' + items.length,
           name: itemName,
           category: cat,
-          priceLocal: rowPrice > 0 ? rowPrice : (detectedTotal > 0 ? detectedTotal : 50),
+          priceLocal: finalLocalPrice,
           currency: detectedCurrency,
-          priceUSD: rowPrice > 0 ? rowPrice : 50,
+          priceUSD: parseFloat((finalLocalPrice / rateToUSD).toFixed(2)),
           quantity: 1,
-          perfumeMl: cat === 'perfume' ? 100 : undefined
-        });
+          taxLocal: parseFloat((finalLocalPrice * 0.1).toFixed(2))
+        };
+        if (cat === 'perfume') {
+          itemObj.perfumeMl = 100;
+        }
+        items.push(itemObj);
       }
     }
   }
 
-  // 품목이 특정되지 않은 경우, 전체 텍스트에서 검출된 Total 금액으로 단일 품목 생성
+  // 품목이 특정되지 않은 경우: 반드시 명확한 합계 금액(detectedTotal > 0)이나 가격 포맷 라인이 존재해야만 영수증으로 인정!
   if (items.length === 0) {
-    if (detectedTotal === 0) {
-      // 숫자 중 가장 의미 있는 금액(상위 값) 탐색
-      const allNums: number[] = [];
+    if (detectedTotal <= 0) {
+      // 명확한 가격 형식(콤마 구분 숫자 예: 1,000 또는 소수점 두자리 예: 12.50 또는 통화기호 결합 숫자)이 있는지 확인
+      const formattedPriceRegex = /(?:[¥$€₩]\s*\d+|\d{1,3}(?:,\d{3})+|\d+\.\d{2}|\d+\s*(?:원|円|엔))/g;
+      const validPrices: number[] = [];
       for (const line of lines) {
-        const nums = line.match(/[\d,]+(\.\d{1,2})?/g);
-        if (nums) {
-          nums.forEach(n => {
-            const val = parseFloat(n.replace(/,/g, ''));
-            if (!isNaN(val) && val > 0 && val < 50000000) allNums.push(val);
+        const matches = line.match(formattedPriceRegex);
+        if (matches) {
+          matches.forEach(m => {
+            const numStr = m.replace(/[^0-9.]/g, '');
+            const val = parseFloat(numStr);
+            if (!isNaN(val) && val > 0 && val < 50000000) {
+              validPrices.push(val);
+            }
           });
         }
       }
-      if (allNums.length > 0) {
-        allNums.sort((a, b) => b - a);
-        detectedTotal = allNums[0];
+      if (validPrices.length >= 1) {
+        validPrices.sort((a, b) => b - a);
+        detectedTotal = validPrices[0];
       } else {
-        // 금액조차 아예 없는 경우 영수증 인식 실패로 간주
+        // 영수증 합계액도 없고 가격 형식도 전혀 없는 경우 -> 영수증이 아님!
         throw new Error('RECEIPT_RECOGNITION_FAILED');
       }
     }
@@ -607,12 +682,16 @@ export function parseReceiptText(text: string, confidence = 0): ParsedReceiptDat
       category: 'cosmetics_general',
       priceLocal: detectedTotal,
       currency: detectedCurrency,
-      priceUSD: detectedCurrency === 'KRW' ? Math.round(detectedTotal / 1380) : detectedCurrency === 'JPY' ? Math.round(detectedTotal / 150) : detectedTotal,
-      quantity: 1
+      priceUSD: parseFloat((detectedTotal / rateToUSD).toFixed(2)),
+      quantity: 1,
+      taxLocal: detectedTax > 0 ? detectedTax : parseFloat((detectedTotal * 0.1).toFixed(2))
     });
   }
 
   const finalTotal = detectedTotal > 0 ? detectedTotal : items.reduce((sum, it) => sum + it.priceLocal, 0);
+  if (finalTotal <= 0 || items.length === 0) {
+    throw new Error('RECEIPT_RECOGNITION_FAILED');
+  }
 
   return {
     rawText: text,

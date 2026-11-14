@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body {
+    @apply antialiased select-none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+    height: 100%;
+    min-height: 100dvh;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  p, span, h1, h2, h3, h4, h5, h6, a, button, label, li {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+}
+
+/* Custom scrollbar for mobile feel */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 4px;
+}

@@ -5,7 +5,8 @@ import {
   saveFirebaseReceipt, 
   deleteFirebaseReceipt, 
   getFirebaseUserCredential, 
-  updateFirebaseSubscription 
+  updateFirebaseSubscription,
+  deleteFirebaseUserAccount
 } from '../services/firebaseService';
 import { isFirebaseConfigured } from '../firebase';
 import { generateFolderName } from '../types';
@@ -62,6 +63,23 @@ const DEFAULT_RATES: ExchangeRates = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // '여원' 계정 재가입을 위한 기존 계정 데이터 1회 초기화
+  if (!localStorage.getItem('dutyfree_purged_yeowon_261114')) {
+    localStorage.setItem('dutyfree_purged_yeowon_261114', 'true');
+    localStorage.removeItem('dutyfree_pw_여원');
+    localStorage.removeItem('dutyfree_sec_여원');
+    if (localStorage.getItem('dutyfree_username') === '여원') {
+      localStorage.removeItem('dutyfree_username');
+    }
+    try {
+      const users: string[] = JSON.parse(localStorage.getItem('dutyfree_all_users') || '[]');
+      localStorage.setItem('dutyfree_all_users', JSON.stringify(users.filter((u) => u !== '여원')));
+    } catch {
+      // ignore
+    }
+    deleteFirebaseUserAccount('여원').catch(() => {});
+  }
+
   const [username, setUsernameState] = useState<string>(() => {
     return localStorage.getItem('dutyfree_username') || '';
   });
@@ -167,27 +185,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return list;
   }, [receipts]);
 
-  const [tripDate, setTripDateState] = useState<string>(() => {
-    return localStorage.getItem('dutyfree_trip_date') || new Date().toISOString().split('T')[0];
-  });
-  const [tripCountry, setTripCountryState] = useState<string>(() => {
-    return localStorage.getItem('dutyfree_trip_country') || '일본';
-  });
-  const [tripCity, setTripCityState] = useState<string>(() => {
-    return localStorage.getItem('dutyfree_trip_city') || '도쿄';
-  });
+  const [tripDate, setTripDateState] = useState<string>('');
+  const [tripCountry, setTripCountryState] = useState<string>('');
+  const [tripCity, setTripCityState] = useState<string>('');
 
   const setTripDate = (date: string) => {
     setTripDateState(date);
-    localStorage.setItem('dutyfree_trip_date', date);
   };
   const setTripCountry = (country: string) => {
     setTripCountryState(country);
-    localStorage.setItem('dutyfree_trip_country', country);
   };
   const setTripCity = (city: string) => {
     setTripCityState(city);
-    localStorage.setItem('dutyfree_trip_city', city);
   };
 
   const [selectedFolder, setSelectedFolderState] = useState<string>(() => {
@@ -220,18 +229,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return receipts.filter(r => r.folderName === selectedFolder);
   }, [receipts, selectedFolder]);
 
+  // 안전한 로컬스토리지 저장 헬퍼 (QuotaExceededError로 인한 빈화면 크래시 원천 차단)
+  const persistReceiptsSafely = (list: Receipt[]) => {
+    try {
+      localStorage.setItem('dutyfree_receipts', JSON.stringify(list));
+    } catch (err) {
+      console.warn('localStorage quota exceeded, saving lightweight receipts:', err);
+      try {
+        const lightweight = list.map(r => ({
+          ...r,
+          imageUrl: r.imageUrl && r.imageUrl.length > 50000 ? undefined : r.imageUrl
+        }));
+        localStorage.setItem('dutyfree_receipts', JSON.stringify(lightweight));
+      } catch (e2) {
+        console.error('Failed to save receipts to localStorage:', e2);
+      }
+    }
+  };
+
   // Save receipts
   useEffect(() => {
-    localStorage.setItem('dutyfree_receipts', JSON.stringify(receipts));
+    persistReceiptsSafely(receipts);
   }, [receipts]);
 
   // Firebase 연결 시 유저 변경 시 Firestore에서 영수증 및 구독/카운트 로드
   useEffect(() => {
     if (username && isFirebaseConfigured) {
-      // 1. 영수증 로드
+      // 1. 영수증 로드 (로컬에 방금 저장된 영수증이 누락되지 않도록 병합)
       loadFirebaseReceipts(username).then((remoteReceipts: Receipt[]) => {
         if (remoteReceipts && remoteReceipts.length > 0) {
-          setReceipts(remoteReceipts);
+          setReceipts(prev => {
+            const remoteIds = new Set(remoteReceipts.map(r => r.id));
+            const unsyncedLocal = prev.filter(r => !remoteIds.has(r.id) && r.id !== 'sample-receipt-1');
+            unsyncedLocal.forEach(r => saveFirebaseReceipt(username, r));
+            const merged = [...unsyncedLocal, ...remoteReceipts].sort(
+              (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+            );
+            persistReceiptsSafely(merged);
+            return merged;
+          });
         } else if (receipts.length > 0) {
           // 로컬 영수증이 있으면 첫 Firebase 업로드 동기화
           receipts.forEach(r => saveFirebaseReceipt(username, r));
@@ -328,7 +364,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addReceipt = (receipt: Receipt) => {
-    setReceipts(prev => [receipt, ...prev]);
+    setReceipts(prev => {
+      const updated = [receipt, ...prev];
+      persistReceiptsSafely(updated);
+      return updated;
+    });
     // Automatically select the new receipt's folder
     if (receipt.folderName) {
       setSelectedFolder(receipt.folderName);
@@ -339,14 +379,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateReceipt = (updated: Receipt) => {
-    setReceipts(prev => prev.map(r => r.id === updated.id ? updated : r));
+    setReceipts(prev => {
+      const next = prev.map(r => r.id === updated.id ? updated : r);
+      persistReceiptsSafely(next);
+      return next;
+    });
     if (username && isFirebaseConfigured) {
       saveFirebaseReceipt(username, updated);
     }
   };
 
   const deleteReceipt = (id: string) => {
-    setReceipts(prev => prev.filter(r => r.id !== id));
+    setReceipts(prev => {
+      const next = prev.filter(r => r.id !== id);
+      persistReceiptsSafely(next);
+      return next;
+    });
     if (username && isFirebaseConfigured) {
       deleteFirebaseReceipt(username, id);
     }

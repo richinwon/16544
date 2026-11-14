@@ -706,7 +706,7 @@ export const Screen3List: React.FC = () => {
 
                                   <div className="flex items-center gap-2">
                                     <span className="font-bold text-gray-900 dark:text-white text-xs">
-                                      {item.currency} {item.priceLocal.toLocaleString()}
+                                      {item.currency || 'USD'} {(item.priceLocal ?? 0).toLocaleString()}
                                     </span>
                                     <button
                                       onClick={() => deleteItemFromReceipt(receipt.id, item.id)}

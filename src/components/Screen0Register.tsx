@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldCheck, Plane, CheckCircle2, AlertCircle, KeyRound, Lock, Eye, EyeOff, HelpCircle, X } from 'lucide-react';
-import { getFirebaseUserCredential, saveFirebaseUserCredential } from '../services/firebaseService';
+import { ShieldCheck, Plane, CheckCircle2, AlertCircle, KeyRound, Lock, Eye, EyeOff, HelpCircle, RotateCcw, X } from 'lucide-react';
+import { getFirebaseUserCredential, saveFirebaseUserCredential, deleteFirebaseUserAccount } from '../services/firebaseService';
+
+interface SecurityQA {
+  findQuestion: string;
+  findAnswer: string;
+  resetQuestion: string;
+  resetAnswer: string;
+}
 
 export const Screen0Register: React.FC = () => {
   const { setUsername } = useApp();
@@ -12,12 +19,42 @@ export const Screen0Register: React.FC = () => {
   const [checkStatus, setCheckStatus] = useState<'idle' | 'available' | 'exists' | 'invalid'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
 
-  // 비밀번호 찾기 모달
+  // 회원가입 시 보안 질문/답변 (비밀번호 찾기용 & 비밀번호 초기화용 분리)
+  const [regFindQuestion, setRegFindQuestion] = useState('');
+  const [regFindAnswer, setRegFindAnswer] = useState('');
+  const [regResetQuestion, setRegResetQuestion] = useState('');
+  const [regResetAnswer, setRegResetAnswer] = useState('');
+
+  // 비밀번호 찾기 / 비밀번호 초기화 모달
   const [showFindModal, setShowFindModal] = useState(false);
+  const [recoveryTab, setRecoveryTab] = useState<'find' | 'reset'>('find');
   const [findId, setFindId] = useState('');
-  const [findHintAnswer, setFindHintAnswer] = useState('');
+  const [inputFindQuestion, setInputFindQuestion] = useState('');
+  const [inputFindAnswer, setInputFindAnswer] = useState('');
+  const [inputResetQuestion, setInputResetQuestion] = useState('');
+  const [inputResetAnswer, setInputResetAnswer] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
   const [findResult, setFindResult] = useState<{ success: boolean; msg: string; password?: string } | null>(null);
+
+  // '여원' 계정 새로 가입 가능하도록 기존 로컬/DB 정보 1회 초기화
+  useEffect(() => {
+    const purgeKey = 'dutyfree_purged_yeowon_261114';
+    if (!localStorage.getItem(purgeKey)) {
+      localStorage.setItem(purgeKey, 'true');
+      localStorage.removeItem('dutyfree_pw_여원');
+      localStorage.removeItem('dutyfree_sec_여원');
+      try {
+        const users: string[] = JSON.parse(localStorage.getItem('dutyfree_all_users') || '[]');
+        const filtered = users.filter((u) => u !== '여원');
+        localStorage.setItem('dutyfree_all_users', JSON.stringify(filtered));
+      } catch {
+        // ignore
+      }
+      deleteFirebaseUserAccount('여원').catch(() => {});
+    }
+  }, []);
 
   const handleCheckDuplicate = async () => {
     const trimmed = inputName.trim();
@@ -32,15 +69,24 @@ export const Screen0Register: React.FC = () => {
       return;
     }
 
-    setLoading(true);
-    try {
-      // 1. Firebase 조회
-      const remoteUser = await getFirebaseUserCredential(trimmed);
-      // 2. localStorage 조회
-      const localUsers = JSON.parse(localStorage.getItem('dutyfree_all_users') || '[]');
-      const localPass = localStorage.getItem(`dutyfree_pw_${trimmed}`);
+    // 1. localStorage 즉시 조회 (지연 없이 0ms 판별)
+    const localUsers = JSON.parse(localStorage.getItem('dutyfree_all_users') || '[]');
+    const localPass = localStorage.getItem(`dutyfree_pw_${trimmed}`);
+    if (localUsers.includes(trimmed) || localPass) {
+      setCheckStatus('exists');
+      setErrorMsg('이미 등록된 아이디입니다. 비밀번호를 입력하여 로그인하세요.');
+      return;
+    }
 
-      if (remoteUser || localUsers.includes(trimmed) || localPass) {
+    // 2. Firebase 비동기 조회 (최대 800ms 타임아웃 적용으로 과도한 로딩 지연 방지)
+    setCheckingDuplicate(true);
+    try {
+      const remoteUser = await Promise.race([
+        getFirebaseUserCredential(trimmed),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 800))
+      ]);
+
+      if (remoteUser) {
         setCheckStatus('exists');
         setErrorMsg('이미 등록된 아이디입니다. 비밀번호를 입력하여 로그인하세요.');
       } else {
@@ -51,12 +97,14 @@ export const Screen0Register: React.FC = () => {
       setCheckStatus('available');
       setErrorMsg('');
     } finally {
-      setLoading(false);
+      setCheckingDuplicate(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     const trimmed = inputName.trim();
     const trimmedPass = inputPassword.trim();
 
@@ -76,93 +124,255 @@ export const Screen0Register: React.FC = () => {
       return;
     }
 
+    const fQ = regFindQuestion.trim();
+    const fA = regFindAnswer.trim();
+    const rQ = regResetQuestion.trim();
+    const rA = regResetAnswer.trim();
+
+    if (mode === 'register') {
+      if (!fQ || !fA) {
+        setCheckStatus('invalid');
+        setErrorMsg('비밀번호 찾기용 질문과 답변을 모두 입력해 주세요.');
+        return;
+      }
+      if (!/[가-힣]/.test(fA)) {
+        setCheckStatus('invalid');
+        setErrorMsg('비밀번호 찾기용 답변은 한글로 입력해 주세요. (예: 빨강, 노랑, 주황)');
+        return;
+      }
+      if (!rQ || !rA) {
+        setCheckStatus('invalid');
+        setErrorMsg('비밀번호 초기화용 질문과 답변을 모두 입력해 주세요.');
+        return;
+      }
+      if (!/[가-힣]/.test(rA)) {
+        setCheckStatus('invalid');
+        setErrorMsg('비밀번호 초기화용 답변은 한글로 입력해 주세요.');
+        return;
+      }
+      if (fQ === rQ || fA === rA) {
+        setCheckStatus('invalid');
+        setErrorMsg('비밀번호 찾기용 질문/답변과 비밀번호 초기화용 질문/답변은 서로 다르게 입력해 주세요.');
+        return;
+      }
+    }
+
     setLoading(true);
     setErrorMsg('');
 
     try {
-      // 1. Firestore 유저 조회
-      const remoteUser = await getFirebaseUserCredential(trimmed);
+      // 1. 로컬 비밀번호 우선 확인 후, 없을 때만 짧은 타임아웃(800ms)으로 원격 조회
       const localPass = localStorage.getItem(`dutyfree_pw_${trimmed}`);
-      const savedPass = remoteUser?.password || localPass;
+      let savedPass = localPass;
+
+      if (!savedPass) {
+        const remoteUser = await Promise.race([
+          getFirebaseUserCredential(trimmed),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 800))
+        ]);
+        if (remoteUser?.password) {
+          savedPass = remoteUser.password;
+        }
+      }
 
       if (mode === 'login') {
         if (savedPass && savedPass !== trimmedPass) {
           setCheckStatus('invalid');
-          setErrorMsg('비밀번호가 일치하지 않습니다. 비밀번호 찾기를 이용해 보세요.');
+          setErrorMsg('비밀번호가 일치하지 않습니다. 비밀번호 찾기 또는 초기화를 이용해 보세요.');
           setLoading(false);
           return;
         }
       }
 
-      // 등록 및 로그인 처리
-      const existingUsers = JSON.parse(localStorage.getItem('dutyfree_all_users') || '[]');
-      if (!existingUsers.includes(trimmed)) {
-        existingUsers.push(trimmed);
-        localStorage.setItem('dutyfree_all_users', JSON.stringify(existingUsers));
+      // 2. 로컬 스토리지 즉시 등록 및 상태 반영
+      try {
+        const existingUsers = JSON.parse(localStorage.getItem('dutyfree_all_users') || '[]');
+        if (!existingUsers.includes(trimmed)) {
+          existingUsers.push(trimmed);
+          localStorage.setItem('dutyfree_all_users', JSON.stringify(existingUsers));
+        }
+        localStorage.setItem(`dutyfree_pw_${trimmed}`, trimmedPass);
+        if (mode === 'register') {
+          const secData: SecurityQA = {
+            findQuestion: fQ,
+            findAnswer: fA,
+            resetQuestion: rQ,
+            resetAnswer: rA,
+          };
+          localStorage.setItem(`dutyfree_sec_${trimmed}`, JSON.stringify(secData));
+        }
+      } catch (storageErr) {
+        console.warn('Local storage write warning:', storageErr);
       }
-      localStorage.setItem(`dutyfree_pw_${trimmed}`, trimmedPass);
 
-      // Firebase 저장
-      await saveFirebaseUserCredential(trimmed, trimmedPass);
+      // 3. Firebase 저장은 백그라운드로 비동기 실행 (무한 로딩 및 화면 멈춤 원천 방지)
+      saveFirebaseUserCredential(
+        trimmed,
+        trimmedPass,
+        mode === 'register'
+          ? {
+              findQuestion: fQ,
+              findAnswer: fA,
+              resetQuestion: rQ,
+              resetAnswer: rA,
+            }
+          : undefined
+      ).catch((err) => {
+        console.warn('Background Firebase credential sync warning:', err);
+      });
 
+      setLoading(false);
+      // 4. 즉시 메인 화면(Screen 1)으로 전환
       setUsername(trimmed);
     } catch (err) {
       console.error('Auth error:', err);
-      // 오프라인 fallback
       localStorage.setItem(`dutyfree_pw_${trimmed}`, trimmedPass);
-      setUsername(trimmed);
-    } finally {
       setLoading(false);
+      setUsername(trimmed);
     }
   };
 
-  // 비밀번호 찾기 실행 로직:
-  // "아이디 2번째 자리와 비밀번호 끝자리를 연속해서 입력해주세요."
+  // 유저 보안 질문/답변 및 비밀번호 조회 헬퍼
+  const loadUserSecurityInfo = async (trimmedId: string) => {
+    const localPass = localStorage.getItem(`dutyfree_pw_${trimmedId}`);
+    const localSecRaw = localStorage.getItem(`dutyfree_sec_${trimmedId}`);
+    let localSec: Partial<SecurityQA> = {};
+    if (localSecRaw) {
+      try {
+        localSec = JSON.parse(localSecRaw);
+      } catch {
+        // ignore parse error
+      }
+    }
+
+    const remoteUser = await Promise.race([
+      getFirebaseUserCredential(trimmedId),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))
+    ]);
+
+    const actualPassword = localPass || remoteUser?.password;
+    const findQuestion = localSec.findQuestion || remoteUser?.findQuestion || '';
+    const findAnswer = localSec.findAnswer || remoteUser?.findAnswer || '';
+    const resetQuestion = localSec.resetQuestion || remoteUser?.resetQuestion || '';
+    const resetAnswer = localSec.resetAnswer || remoteUser?.resetAnswer || '';
+
+    return {
+      actualPassword,
+      findQuestion,
+      findAnswer,
+      resetQuestion,
+      resetAnswer,
+    };
+  };
+
+  // 1) 비밀번호 찾기 실행 로직 (가입 시 설정한 비밀번호 찾기용 질문 & 답변 검증)
   const handleFindPassword = async () => {
     const trimmedId = findId.trim();
-    const trimmedAnswer = findHintAnswer.trim();
+    const q = inputFindQuestion.trim();
+    const a = inputFindAnswer.trim();
 
     if (!trimmedId) {
       setFindResult({ success: false, msg: '아이디를 입력해주세요.' });
       return;
     }
-    if (trimmedId.length < 2) {
-      setFindResult({ success: false, msg: '아이디는 2글자 이상이어야 합니다.' });
+    if (!q) {
+      setFindResult({ success: false, msg: '가입 시 작성한 비밀번호 찾기 질문을 입력해주세요.' });
       return;
     }
-    if (!trimmedAnswer) {
-      setFindResult({ success: false, msg: '힌트 확인 값을 입력해주세요.' });
+    if (!a) {
+      setFindResult({ success: false, msg: '가입 시 작성한 비밀번호 찾기 답변(한글)을 입력해주세요.' });
       return;
     }
 
     try {
-      const remoteUser = await getFirebaseUserCredential(trimmedId);
-      const localPass = localStorage.getItem(`dutyfree_pw_${trimmedId}`);
-      const actualPassword = remoteUser?.password || localPass;
-
-      if (!actualPassword) {
+      const info = await loadUserSecurityInfo(trimmedId);
+      if (!info.actualPassword) {
         setFindResult({ success: false, msg: '해당 아이디로 가입된 회원 정보를 찾을 수 없습니다.' });
         return;
       }
 
-      const idSecondChar = trimmedId[1] || '';
-      const pwLastChar = actualPassword[actualPassword.length - 1] || '';
-      const expectedHintAnswer = `${idSecondChar}${pwLastChar}`;
+      if (!info.findQuestion || !info.findAnswer) {
+        setFindResult({ success: false, msg: '등록된 비밀번호 찾기 질문/답변 정보가 없습니다.' });
+        return;
+      }
 
-      if (trimmedAnswer === expectedHintAnswer) {
+      if (info.findQuestion.trim() === q && info.findAnswer.trim() === a) {
         setFindResult({
           success: true,
-          msg: `인증 성공! 회원님의 비밀번호는 [ ${actualPassword} ] 입니다.`,
-          password: actualPassword
+          msg: `인증 성공! 회원님의 비밀번호는 [ ${info.actualPassword} ] 입니다.`,
+          password: info.actualPassword
         });
       } else {
         setFindResult({
           success: false,
-          msg: '힌트 값이 일치하지 않습니다. 아이디 2번째 자리와 비밀번호 끝자리를 정확히 입력해 주세요.'
+          msg: '비밀번호 찾기 질문 또는 답변이 일치하지 않습니다. 가입 시 설정한 질문과 답변을 정확히 입력해 주세요.'
         });
       }
     } catch {
       setFindResult({ success: false, msg: '비밀번호 찾기 처리 중 오류가 발생했습니다.' });
+    }
+  };
+
+  // 2) 비밀번호 초기화 실행 로직 (비밀번호 찾기용과 다른, 초기화 전용 질문 & 답변 검증 후 새 비밀번호 설정)
+  const handleResetPassword = async () => {
+    const trimmedId = findId.trim();
+    const q = inputResetQuestion.trim();
+    const a = inputResetAnswer.trim();
+    const newPw = newResetPassword.trim();
+
+    if (!trimmedId) {
+      setFindResult({ success: false, msg: '아이디를 입력해주세요.' });
+      return;
+    }
+    if (!q) {
+      setFindResult({ success: false, msg: '가입 시 작성한 비밀번호 초기화 질문을 입력해주세요.' });
+      return;
+    }
+    if (!a) {
+      setFindResult({ success: false, msg: '가입 시 작성한 비밀번호 초기화 답변(한글)을 입력해주세요.' });
+      return;
+    }
+    if (!newPw || newPw.length < 4) {
+      setFindResult({ success: false, msg: '새 비밀번호를 4자리 이상 입력해주세요.' });
+      return;
+    }
+
+    try {
+      const info = await loadUserSecurityInfo(trimmedId);
+      if (!info.actualPassword) {
+        setFindResult({ success: false, msg: '해당 아이디로 가입된 회원 정보를 찾을 수 없습니다.' });
+        return;
+      }
+
+      if (info.findQuestion && (info.findQuestion.trim() === q || info.findAnswer.trim() === a)) {
+        setFindResult({
+          success: false,
+          msg: '비밀번호 찾기에 사용한 질문/답변은 비밀번호 초기화에 사용할 수 없습니다. 초기화 전용 질문과 답변을 입력해 주세요.'
+        });
+        return;
+      }
+
+      if (!info.resetQuestion || !info.resetAnswer) {
+        setFindResult({ success: false, msg: '등록된 비밀번호 초기화 질문/답변 정보가 없습니다.' });
+        return;
+      }
+
+      if (info.resetQuestion.trim() === q && info.resetAnswer.trim() === a) {
+        localStorage.setItem(`dutyfree_pw_${trimmedId}`, newPw);
+        saveFirebaseUserCredential(trimmedId, newPw).catch(() => {});
+        setFindResult({
+          success: true,
+          msg: `비밀번호가 새 비밀번호 [ ${newPw} ](으)로 초기화되었습니다!`,
+          password: newPw
+        });
+      } else {
+        setFindResult({
+          success: false,
+          msg: '비밀번호 초기화 질문 또는 답변이 일치하지 않습니다. 가입 시 설정한 초기화용 질문과 답변을 정확히 입력해 주세요.'
+        });
+      }
+    } catch {
+      setFindResult({ success: false, msg: '비밀번호 초기화 처리 중 오류가 발생했습니다.' });
     }
   };
 
@@ -202,7 +412,7 @@ export const Screen0Register: React.FC = () => {
 
       {/* Input Card Form */}
       <div className="w-full max-w-sm bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 my-5">
-        {/* 모드 탭 (로그인 / 회원가입) */}
+        {/* 모드 탭 (로그인 / 가입하기) */}
         <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-2xl mb-4">
           <button
             type="button"
@@ -232,7 +442,7 @@ export const Screen0Register: React.FC = () => {
                 : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
-            신규 회원가입
+            가입하기
           </button>
         </div>
 
@@ -258,10 +468,10 @@ export const Screen0Register: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCheckDuplicate}
-                disabled={loading}
+                disabled={checkingDuplicate}
                 className="absolute right-1.5 top-1.5 bottom-1.5 px-3 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-[11px] font-semibold text-gray-700 dark:text-gray-200 transition-colors"
               >
-                중복 확인
+                {checkingDuplicate ? '확인 중...' : '중복 확인'}
               </button>
             </div>
             
@@ -286,18 +496,35 @@ export const Screen0Register: React.FC = () => {
                 <Lock className="w-3 h-3" />
                 비밀번호
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setFindId(inputName);
-                  setFindResult(null);
-                  setShowFindModal(true);
-                }}
-                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5"
-              >
-                <HelpCircle className="w-3 h-3" />
-                비밀번호 찾기
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFindId(inputName);
+                    setRecoveryTab('find');
+                    setFindResult(null);
+                    setShowFindModal(true);
+                  }}
+                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  비밀번호 찾기
+                </button>
+                <span className="text-gray-300 dark:text-gray-600 text-[10px]">|</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFindId(inputName);
+                    setRecoveryTab('reset');
+                    setFindResult(null);
+                    setShowFindModal(true);
+                  }}
+                  className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  비밀번호 초기화
+                </button>
+              </div>
             </div>
             <div className="relative flex items-center">
               <input
@@ -319,15 +546,91 @@ export const Screen0Register: React.FC = () => {
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-
-            {/* 비밀번호 찾기 힌트 안내 문구 */}
-            <div className="mt-2 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/50 text-[11px] text-amber-800 dark:text-amber-300 text-left flex items-start gap-1.5 leading-snug">
-              <KeyRound className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-              <span>
-                <strong>비밀번호 찾기 힌트:</strong> 아이디 2번째 자리와 비밀번호 끝자리를 연속해서 입력해주세요.
-              </span>
-            </div>
           </div>
+
+          {/* 가입하기 모드 전용: 비밀번호 찾기용 & 비밀번호 초기화용 보안 질문/답변 설정 */}
+          {mode === 'register' && (
+            <div className="space-y-3 pt-1 text-left">
+              {/* 1. 비밀번호 찾기용 질문 & 답변 */}
+              <div className="p-3 rounded-2xl bg-gray-50/90 dark:bg-gray-900/70 border border-gray-200/80 dark:border-gray-700 space-y-2">
+                <span className="text-[11px] font-extrabold text-blue-600 dark:text-blue-400 block">
+                  1. 비밀번호 찾기용 질문 · 답변 설정
+                </span>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    비밀번호 찾기 질문 (직접 작성)
+                  </label>
+                  <input
+                    type="text"
+                    value={regFindQuestion}
+                    onChange={(e) => {
+                      setRegFindQuestion(e.target.value);
+                      setErrorMsg('');
+                    }}
+                    placeholder="예: 좋아하는 색상은?"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    비밀번호 찾기 답변 (한글 입력)
+                  </label>
+                  <input
+                    type="text"
+                    value={regFindAnswer}
+                    onChange={(e) => {
+                      setRegFindAnswer(e.target.value);
+                      setErrorMsg('');
+                    }}
+                    placeholder="예: 빨강, 노랑, 주황 등 한글로"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* 2. 비밀번호 초기화용 질문 & 답변 (찾기용과 서로 다른 질문/답변 필수) */}
+              <div className="p-3 rounded-2xl bg-gray-50/90 dark:bg-gray-900/70 border border-gray-200/80 dark:border-gray-700 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400">
+                    2. 비밀번호 초기화용 질문 · 답변 설정
+                  </span>
+                  <span className="text-[10px] text-gray-400 font-medium">
+                    *찾기용과 다른 질문/답변
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    비밀번호 초기화 질문 (직접 작성)
+                  </label>
+                  <input
+                    type="text"
+                    value={regResetQuestion}
+                    onChange={(e) => {
+                      setRegResetQuestion(e.target.value);
+                      setErrorMsg('');
+                    }}
+                    placeholder="예: 가장 기억에 남는 여행지는?"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1">
+                    비밀번호 초기화 답변 (한글 입력)
+                  </label>
+                  <input
+                    type="text"
+                    value={regResetAnswer}
+                    onChange={(e) => {
+                      setRegResetAnswer(e.target.value);
+                      setErrorMsg('');
+                    }}
+                    placeholder="예: 제주도, 부산 등 한글로"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {errorMsg && (
             <p className="flex items-center text-xs text-rose-500 ml-1 text-left">
@@ -346,7 +649,7 @@ export const Screen0Register: React.FC = () => {
             ) : (
               <Plane className="w-4 h-4" />
             )}
-            {mode === 'login' ? '로그인하고 여행 시작하기' : '회원가입 완료 및 여행 시작하기'}
+            {mode === 'login' ? '로그인하고 여행 시작하기' : '가입 완료 및 여행 시작하기'}
           </button>
         </form>
       </div>
@@ -356,7 +659,7 @@ export const Screen0Register: React.FC = () => {
         관세청 여행자 휴대품 면세 규정 공식 로직 탑재
       </div>
 
-      {/* 비밀번호 찾기 팝업 모달 */}
+      {/* 비밀번호 찾기 / 비밀번호 초기화 팝업 모달 */}
       {showFindModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="w-full max-w-sm bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-gray-700 space-y-4 animate-in fade-in zoom-in-95">
@@ -364,7 +667,7 @@ export const Screen0Register: React.FC = () => {
               <div className="flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                  비밀번호 찾기
+                  {recoveryTab === 'find' ? '비밀번호 찾기' : '비밀번호 초기화'}
                 </h3>
               </div>
               <button
@@ -376,6 +679,38 @@ export const Screen0Register: React.FC = () => {
               </button>
             </div>
 
+            {/* 모달 상단 탭: 비밀번호 찾기 / 비밀번호 초기화 */}
+            <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryTab('find');
+                  setFindResult(null);
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                  recoveryTab === 'find'
+                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
+                }`}
+              >
+                비밀번호 찾기
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryTab('reset');
+                  setFindResult(null);
+                }}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                  recoveryTab === 'reset'
+                    ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
+                }`}
+              >
+                비밀번호 초기화
+              </button>
+            </div>
+
             <div className="text-left space-y-3">
               <div>
                 <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
@@ -384,29 +719,97 @@ export const Screen0Register: React.FC = () => {
                 <input
                   type="text"
                   value={findId}
-                  onChange={(e) => setFindId(e.target.value)}
+                  onChange={(e) => {
+                    setFindId(e.target.value);
+                    setFindResult(null);
+                  }}
                   placeholder="가입 시 입력한 아이디"
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
+                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
-                  힌트 확인 값
-                </label>
-                <input
-                  type="text"
-                  value={findHintAnswer}
-                  onChange={(e) => setFindHintAnswer(e.target.value)}
-                  placeholder="아이디 2번째 자리 + 비밀번호 끝자리"
-                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs"
-                />
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1 leading-tight">
-                  * <strong>아이디 2번째 자리와 비밀번호 끝자리를 연속해서 입력해주세요.</strong>
-                  <br />
-                  예: 아이디가 'won', 비밀번호가 '1234'면 'o4' 입력
-                </p>
-              </div>
+              {recoveryTab === 'find' ? (
+                <>
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                      비밀번호 찾기 질문 (본인 직접 작성 질문)
+                    </label>
+                    <input
+                      type="text"
+                      value={inputFindQuestion}
+                      onChange={(e) => {
+                        setInputFindQuestion(e.target.value);
+                        setFindResult(null);
+                      }}
+                      placeholder="예: 좋아하는 색상은?"
+                      className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                      비밀번호 찾기 답변 (한글)
+                    </label>
+                    <input
+                      type="text"
+                      value={inputFindAnswer}
+                      onChange={(e) => {
+                        setInputFindAnswer(e.target.value);
+                        setFindResult(null);
+                      }}
+                      placeholder="예: 빨강, 노랑, 주황 등 한글로"
+                      className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                      비밀번호 초기화 질문 (찾기용과 다른 질문)
+                    </label>
+                    <input
+                      type="text"
+                      value={inputResetQuestion}
+                      onChange={(e) => {
+                        setInputResetQuestion(e.target.value);
+                        setFindResult(null);
+                      }}
+                      placeholder="가입 시 설정한 비밀번호 초기화용 질문"
+                      className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                      비밀번호 초기화 답변 (찾기용과 다른 한글 답변)
+                    </label>
+                    <input
+                      type="text"
+                      value={inputResetAnswer}
+                      onChange={(e) => {
+                        setInputResetAnswer(e.target.value);
+                        setFindResult(null);
+                      }}
+                      placeholder="가입 시 설정한 비밀번호 초기화용 한글 답변"
+                      className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                      새 비밀번호 설정
+                    </label>
+                    <input
+                      type="password"
+                      value={newResetPassword}
+                      onChange={(e) => {
+                        setNewResetPassword(e.target.value);
+                        setFindResult(null);
+                      }}
+                      placeholder="새로운 비밀번호 (4자리 이상)"
+                      className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </>
+              )}
 
               {findResult && (
                 <div
@@ -429,13 +832,23 @@ export const Screen0Register: React.FC = () => {
               >
                 닫기
               </button>
-              <button
-                type="button"
-                onClick={handleFindPassword}
-                className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20"
-              >
-                비밀번호 확인
-              </button>
+              {recoveryTab === 'find' ? (
+                <button
+                  type="button"
+                  onClick={handleFindPassword}
+                  className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20"
+                >
+                  비밀번호 확인
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/20"
+                >
+                  비밀번호 초기화
+                </button>
+              )}
             </div>
           </div>
         </div>

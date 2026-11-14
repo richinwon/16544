@@ -51,64 +51,76 @@ export const Screen4Report: React.FC = () => {
   };
 
   const handleKakaoShare = async () => {
-    const currentUrl = window.location.href.split('#')[0];
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const shareTitle = `[면세비서] 면세 리포트 (${selectedFolder})`;
-    const shareText = `[면세비서] 여행 면세 정산 리포트 (${selectedFolder})\n- 총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} (${convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원)\n- 과세 대상: $${formatUSD(duty.taxableUSD)}\n- 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)\n\n상세보기: ${currentUrl}`;
-    const fullShareText = `${shareText}\n\n${currentUrl}`;
+    const currentUrl = window.location.origin + window.location.pathname;
+    const ua = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(ua);
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
 
-    // 1) 텍스트 및 주소 클립보드 자동 복사
+    // [1단계] 리포트 주소(URL) 클립보드 즉시 복사 (동기 복사 우선 실행으로 사용자 제스처 유지 및 붙여넣기 오류 방지)
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(fullShareText);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = fullShareText;
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
+      const textarea = document.createElement('textarea');
+      textarea.value = currentUrl;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, currentUrl.length);
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
     } catch (err) {
-      console.warn('Clipboard write error:', err);
+      console.warn('Fallback clipboard copy warning:', err);
     }
 
-    showToast('주소를 복사했어요!');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(currentUrl).catch(() => {});
+    }
 
-    // 2) 모바일 환경: 네이티브 공유 시트 또는 카카오톡 앱 직접 연동
-    if (isMobile) {
+    showToast('리포트 주소를 복사했어요!');
+
+    // [2단계] 카카오톡 앱 연동 실행 ➔ 대화상대 선택 화면('나에게' + '친구/채팅방' 모두 선택 가능) ➔ 채팅창 선택 시 리포트 주소 자동 입력
+    if (isAndroid) {
+      // Android: ConnectBroadcastActivity 컴포넌트를 명시적으로 지정하여 '나에게'만 단독 실행되는 현상을 방지하고,
+      // '나에게(나와의 채팅)' 및 모든 '친구/채팅방 대화상대'를 선택할 수 있는 카카오톡 공유 대상 선택 화면으로 직행
+      const kakaoFriendPickerIntent = `intent:#Intent;action=android.intent.action.SEND;type=text/plain;package=com.kakao.talk;component=com.kakao.talk/com.kakao.talk.activity.friend.picker.ConnectBroadcastActivity;S.android.intent.extra.TEXT=${encodeURIComponent(currentUrl)};S.browser_fallback_url=${encodeURIComponent(currentUrl)};end`;
+      window.location.href = kakaoFriendPickerIntent;
+      return;
+    }
+
+    if (isIOS) {
+      // iOS: Web Share API를 통해 단일 URL 텍스트 전달 ('나에게' -> '나와의 채팅' 선택 시 오류 없이 주소 자동 입력)
       if (navigator.share) {
         try {
           await navigator.share({
-            title: shareTitle,
-            text: shareText,
-            url: currentUrl,
+            text: currentUrl,
           });
           return;
         } catch (err: any) {
-          if (err.name === 'AbortError') {
+          if (err && err.name === 'AbortError') {
             return;
           }
         }
       }
-
-      // 카카오톡 앱 스킴 호출 및 미설치 감지
-      const clickedAt = Date.now();
       window.location.href = 'kakaotalk://';
-
-      setTimeout(() => {
-        // 앱이 설치되어 열렸다면 화면이 hide되거나 딜레이가 길어짐
-        if (Date.now() - clickedAt < 2200 && !document.hidden) {
-          alert("카카오톡이 설치되어 있지 않습니다. 주소를 복사했어요! 원하시는 곳에 붙여넣기 해주세요!");
-        }
-      }, 1800);
-    } else {
-      // PC 환경: 카카오톡 앱 미설치 안내 및 클립보드 복사 안내
-      alert("카카오톡이 설치되어 있지 않습니다. 주소를 복사했어요! 원하시는 곳에 붙여넣기 해주세요!");
+      return;
     }
+
+    // 기타/데스크톱 환경: Web Share API 지원 시 호출, 미지원 시 카카오톡 스킴 호출
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          text: currentUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err && err.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+    window.location.href = 'kakaotalk://';
   };
 
   return (

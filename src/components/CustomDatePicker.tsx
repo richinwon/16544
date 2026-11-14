@@ -13,7 +13,7 @@ interface CustomDatePickerProps {
 export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   value,
   onChange,
-  placeholder = '날짜:날짜',
+  placeholder = '날짜',
   className = '',
   clearOnFocus = false,
 }) => {
@@ -111,13 +111,13 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
           }
           setIsOpen(!isOpen);
         }}
-        className={`w-full px-2.5 py-1.5 rounded-xl bg-white/95 hover:bg-white dark:bg-gray-800 dark:hover:bg-gray-750 font-bold text-xs flex items-center justify-between gap-1.5 border border-gray-200/80 dark:border-gray-700 shadow-xs transition-colors ${
+        className={`w-full px-2 py-1.5 rounded-xl bg-white/95 hover:bg-white dark:bg-gray-800 dark:hover:bg-gray-750 font-bold text-xs flex items-center justify-between gap-1 border border-gray-200/80 dark:border-gray-700 shadow-xs transition-colors ${
           isPlaceholder ? 'text-gray-400 dark:text-gray-500 font-normal' : 'text-gray-800 dark:text-white'
         }`}
       >
-        <div className="flex items-center gap-1.5 min-w-0 truncate">
+        <div className="flex items-center gap-1 min-w-0">
           <CalendarIcon className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-          <span className="truncate">{displayLabel}</span>
+          <span className="whitespace-nowrap tracking-tight">{displayLabel}</span>
         </div>
         {value && value !== placeholder ? (
           <button
@@ -126,7 +126,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
               e.stopPropagation();
               handleClear();
             }}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded shrink-0"
           >
             <X className="w-3 h-3" />
           </button>

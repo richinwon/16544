@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { Receipt } from '../types';
 import { generateFolderName } from '../types';
-import { recognizeReceipt } from '../utils/ocrService';
+import { recognizeReceipt, compressReceiptThumbnail } from '../utils/ocrService';
 import { 
   Camera, 
   Upload, 
@@ -59,15 +59,25 @@ export const Screen2Camera: React.FC = () => {
 
   // 폴더 입력란 유효성 검증 함수
   const validateFolderOrAlert = (): boolean => {
-    const isDateInvalid = !manualDate || manualDate === '날짜:날짜' || !/^\d{4}-\d{2}-\d{2}$/.test(manualDate);
-    const isCountryInvalid = !manualCountry || manualCountry.trim() === '' || manualCountry === '국가명:국가입력';
-    const isCityInvalid = !manualCity || manualCity.trim() === '' || manualCity === '도시명:도시입력';
+    const isDateInvalid = !manualDate || manualDate === '날짜' || manualDate === '날짜:날짜' || !/^\d{4}-\d{2}-\d{2}$/.test(manualDate);
+    const isCountryInvalid = !manualCountry || manualCountry.trim() === '' || manualCountry === '입력' || manualCountry === '국가명:국가입력';
+    const isCityInvalid = !manualCity || manualCity.trim() === '' || manualCity === '입력' || manualCity === '도시명:도시입력';
 
     if (isDateInvalid || isCountryInvalid || isCityInvalid) {
       alert('먼저 저장 할 폴더 정보를 입력해 주세요!');
       return false;
     }
     return true;
+  };
+
+  // 입력값 전체 초기화 헬퍼
+  const resetAllCameraInputs = () => {
+    setManualDate('');
+    setManualCountry('');
+    setManualCity('');
+    setCapturedImages([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
   // 무료 5회 소진 여부 및 구독 상태 검증
@@ -128,6 +138,7 @@ export const Screen2Camera: React.FC = () => {
   };
 
   useEffect(() => {
+    resetAllCameraInputs();
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -199,6 +210,8 @@ export const Screen2Camera: React.FC = () => {
     const fixedFolderName = generateFolderName(manualDate, manualCountry, manualCity);
 
     try {
+      const validReceipts: Receipt[] = [];
+
       for (let idx = 0; idx < capturedImages.length; idx++) {
         const imgSrc = capturedImages[idx];
         setOcrStatus(`영수증 ${idx + 1}/${capturedImages.length}장 다국어 AI 분석 중...`);
@@ -208,7 +221,17 @@ export const Screen2Camera: React.FC = () => {
           setOcrStatus(`[${idx + 1}/${capturedImages.length}] ${msg}`);
         });
 
+        if (!parsed || !parsed.items || parsed.items.length === 0) {
+          throw new Error('RECEIPT_RECOGNITION_FAILED');
+        }
+
         const totalUSD = parsed.items.reduce((sum, item) => sum + (item.priceUSD || item.priceLocal || 0), 0);
+        if (totalUSD <= 0) {
+          throw new Error('RECEIPT_RECOGNITION_FAILED');
+        }
+
+        // 로컬스토리지 및 DB 용량 초과로 인한 빈화면 크래시 방지를 위해 경량 썸네일로 압축
+        const compactThumbnail = await compressReceiptThumbnail(imgSrc);
 
         const newReceipt: Receipt = {
           id: 'receipt-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substring(2, 7),
@@ -217,30 +240,33 @@ export const Screen2Camera: React.FC = () => {
           city: manualCity,
           folderName: fixedFolderName,
           storeName: parsed.storeName || `${manualCity} 매장 #${idx + 1}`,
-          imageUrl: imgSrc,
+          imageUrl: compactThumbnail,
           items: parsed.items,
           totalUSD: Math.round(totalUSD * 100) / 100,
           createdAt: Date.now() + idx
         };
 
-        addReceipt(newReceipt);
-        incrementCaptureCount();
+        validReceipts.push(newReceipt);
       }
+
+      // 모든 영수증 검증 통과 시에만 실제 저장 수행
+      validReceipts.forEach((r) => {
+        addReceipt(r);
+        incrementCaptureCount();
+      });
 
       setOcrProgress(100);
       setOcrStatus('분석 완료!');
 
-      // 저장 완료 후 사용자 안내 및 구매목록 화면(Screen 3)으로 부드럽게 전환
+      // 영수증 저장 직후 모든 입력값(여행지 설정, 날짜, 촬영 이미지 등)을 기본값으로 깨끗하게 초기화
+      resetAllCameraInputs();
+
+      // 저장 완료 후 사용자 안내 및 구매목록 화면(Screen 3)으로 즉시 전환
       alert(`✨ 영수증 분석 완료!\n여행 폴더 [${fixedFolderName}]에 안전하게 저장되었습니다.`);
-      
-      setTimeout(() => {
-        setCapturedImages([]);
-        setCurrentScreen(3);
-      }, 100);
+      setCurrentScreen(3);
     } catch (err: any) {
       console.warn('OCR verification failed:', err);
-      alert('영수증 인식이 어렵습니다. 수기 입력 모드로 전환합니다.');
-      setShowManualModal(true);
+      alert('인식에 실패하였습니다');
     } finally {
       setIsAnalyzing(false);
       setOcrProgress(0);
@@ -249,9 +275,9 @@ export const Screen2Camera: React.FC = () => {
   };
 
   // Preview folder name
-  const isDateReady = manualDate && manualDate !== '날짜:날짜' && /^\d{4}-\d{2}-\d{2}$/.test(manualDate);
-  const isCountryReady = manualCountry && manualCountry !== '국가명:국가입력' && manualCountry.trim() !== '';
-  const isCityReady = manualCity && manualCity !== '도시명:도시입력' && manualCity.trim() !== '';
+  const isDateReady = manualDate && manualDate !== '날짜' && manualDate !== '날짜:날짜' && /^\d{4}-\d{2}-\d{2}$/.test(manualDate);
+  const isCountryReady = manualCountry && manualCountry !== '입력' && manualCountry !== '국가명:국가입력' && manualCountry.trim() !== '';
+  const isCityReady = manualCity && manualCity !== '입력' && manualCity !== '도시명:도시입력' && manualCity.trim() !== '';
   const previewFolder = isDateReady && isCountryReady && isCityReady
     ? generateFolderName(manualDate, manualCountry, manualCity)
     : '폴더 정보를 입력해주세요';
@@ -330,58 +356,46 @@ export const Screen2Camera: React.FC = () => {
           </div>
         </div>
 
-        {/* 수동 폴더 입력란: 기본 placeholder '날짜:날짜', '국가명:국가입력', '도시명:도시입력' (포커스 시 자동 빈칸) */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* 수동 폴더 입력란: 날짜 칸(yyyy-mm-dd 잘림 방지 확대) + 국가명/도시명 동일 크기 배분 */}
+        <div className="grid grid-cols-[1.45fr_1fr_1fr] gap-1.5">
           {/* 1. 날짜 선택기 (폴더 드롭다운 통일 디자인) */}
-          <div>
+          <div className="min-w-0">
             <label className="text-[10px] text-gray-400 block mb-0.5 text-left font-semibold">
               구매일자 *
             </label>
             <CustomDatePicker
               value={manualDate}
               onChange={(newDate) => setManualDate(newDate)}
-              placeholder="날짜:날짜"
+              placeholder="날짜"
               clearOnFocus={true}
             />
           </div>
 
           {/* 2. 국가명 입력란 */}
-          <div>
+          <div className="min-w-0">
             <label className="text-[10px] text-gray-400 block mb-0.5 text-left font-semibold">
               국가명 *
             </label>
             <input
               type="text"
               value={manualCountry}
-              placeholder="국가명:국가입력"
-              onFocus={() => {
-                if (manualCountry === '국가명:국가입력') setManualCountry('');
-              }}
-              onBlur={() => {
-                if (!manualCountry.trim()) setManualCountry('국가명:국가입력');
-              }}
+              placeholder="입력"
               onChange={(e) => setManualCountry(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
+              className="w-full px-2.5 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
             />
           </div>
 
           {/* 3. 도시명 입력란 */}
-          <div>
+          <div className="min-w-0">
             <label className="text-[10px] text-gray-400 block mb-0.5 text-left font-semibold">
               도시명 *
             </label>
             <input
               type="text"
               value={manualCity}
-              placeholder="도시명:도시입력"
-              onFocus={() => {
-                if (manualCity === '도시명:도시입력') setManualCity('');
-              }}
-              onBlur={() => {
-                if (!manualCity.trim()) setManualCity('도시명:도시입력');
-              }}
+              placeholder="입력"
               onChange={(e) => setManualCity(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
+              className="w-full px-2.5 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
             />
           </div>
         </div>
@@ -674,7 +688,10 @@ export const Screen2Camera: React.FC = () => {
       <ManualReceiptModal 
         isOpen={showManualModal} 
         onClose={() => setShowManualModal(false)} 
-        onSuccess={() => setCurrentScreen(3)}
+        onSuccess={() => {
+          resetAllCameraInputs();
+          setCurrentScreen(3);
+        }}
       />
 
       {/* Modal 3: 월 500원 구독 안내 모달 */}
