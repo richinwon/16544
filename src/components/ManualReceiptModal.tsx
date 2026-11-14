@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import type { ProductCategory, ProductItem, Receipt } from '../types';
 import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName } from '../types';
 import { ChevronDown, Check, Plus, Minus, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { CustomDatePicker } from './CustomDatePicker';
 
 interface ManualReceiptModalProps {
   isOpen: boolean;
@@ -300,11 +301,10 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
               구매 날짜 *
             </label>
-            <input
-              type="date"
+            <CustomDatePicker
               value={manualDate}
-              onChange={(e) => setManualDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+              onChange={(newDate) => setManualDate(newDate)}
+              placeholder="날짜:날짜"
             />
           </div>
 

@@ -49,7 +49,9 @@ export interface ExchangeRates {
 
 export interface UserCredential {
   username: string;
-  password: string;
+  password?: string;
+  freeCaptureCount?: number; // 무료 촬영 횟수 (기본 0, 최대 5회)
+  isSubscribed?: boolean;    // 월 500원 무제한 구독 여부
   updatedAt?: number;
 }
 

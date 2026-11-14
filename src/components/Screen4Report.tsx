@@ -54,15 +54,16 @@ export const Screen4Report: React.FC = () => {
     const currentUrl = window.location.href.split('#')[0];
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const shareTitle = `[면세비서] 면세 리포트 (${selectedFolder})`;
-    const shareText = `[면세비서] 여행 면세 정산 리포트 (${selectedFolder})\n- 총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} (${convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원)\n- 과세 대상: $${formatUSD(duty.taxableUSD)}\n- 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)\n\n자세히 보기: ${currentUrl}`;
+    const shareText = `[면세비서] 여행 면세 정산 리포트 (${selectedFolder})\n- 총 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} (${convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원)\n- 과세 대상: $${formatUSD(duty.taxableUSD)}\n- 자진신고 예상세액: $${formatUSD(duty.voluntaryTaxUSD)} (${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)\n\n상세보기: ${currentUrl}`;
+    const fullShareText = `${shareText}\n\n${currentUrl}`;
 
-    // 1) 클립보드에 깔끔한 주소 복사
+    // 1) 텍스트 및 주소 클립보드 자동 복사
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(currentUrl);
+        await navigator.clipboard.writeText(fullShareText);
       } else {
         const textarea = document.createElement('textarea');
-        textarea.value = currentUrl;
+        textarea.value = fullShareText;
         textarea.style.position = 'fixed';
         textarea.style.left = '-9999px';
         document.body.appendChild(textarea);
@@ -75,36 +76,38 @@ export const Screen4Report: React.FC = () => {
       console.warn('Clipboard write error:', err);
     }
 
-    // 2) 토스트 알림 노출
     showToast('주소를 복사했어요!');
 
-    // 3) 모바일/PC 네이티브 공유 및 카카오톡 연동
-    // 모바일 기기: 네이티브 OS 공유 시트 호출 -> 카카오톡(친구, 나에게, 오픈채팅 등 모든 대화상대) 100% 정상 전송
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: shareTitle,
-          text: shareText,
-          url: currentUrl,
-        });
-        return;
-      } catch (err: any) {
-        // 사용자가 취소한 경우 외에 에러 발생 시 fallback
-        if (err.name !== 'AbortError') {
-          console.warn('navigator.share failed, fallback to scheme:', err);
-        } else {
+    // 2) 모바일 환경: 네이티브 공유 시트 또는 카카오톡 앱 직접 연동
+    if (isMobile) {
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: shareTitle,
+            text: shareText,
+            url: currentUrl,
+          });
           return;
+        } catch (err: any) {
+          if (err.name === 'AbortError') {
+            return;
+          }
         }
       }
-    }
 
-    // fallback: 모바일 카카오톡 앱 직접 실행
-    if (isMobile) {
+      // 카카오톡 앱 스킴 호출 및 미설치 감지
+      const clickedAt = Date.now();
+      window.location.href = 'kakaotalk://';
+
       setTimeout(() => {
-        window.location.href = 'kakaotalk://';
-      }, 300);
+        // 앱이 설치되어 열렸다면 화면이 hide되거나 딜레이가 길어짐
+        if (Date.now() - clickedAt < 2200 && !document.hidden) {
+          alert("카카오톡이 설치되어 있지 않습니다. 주소를 복사했어요! 원하시는 곳에 붙여넣기 해주세요!");
+        }
+      }, 1800);
     } else {
-      alert('주소를 복사했어요! 카카오톡 대화방에 붙여넣기(Ctrl+V)하세요.');
+      // PC 환경: 카카오톡 앱 미설치 안내 및 클립보드 복사 안내
+      alert("카카오톡이 설치되어 있지 않습니다. 주소를 복사했어요! 원하시는 곳에 붙여넣기 해주세요!");
     }
   };
 

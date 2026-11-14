@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { Receipt, ProductItem, ProductCategory } from '../types';
 import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER } from '../types';
+import * as XLSX from 'xlsx';
 import { FolderSelect } from './FolderSelect';
 import { ManualReceiptModal } from './ManualReceiptModal';
 import { 
@@ -202,60 +203,76 @@ export const Screen3List: React.FC = () => {
     setNewItemPerfumeMl(50);
   };
 
-  // Export folder purchases to Excel-compatible CSV with UTF-8 BOM
+  // Export folder purchases to authentic Excel (.xlsx) file
   const handleExportExcel = (folderName: string, rList: Receipt[]) => {
     const headers = [
       '여행명',
       '날짜',
+      '구매처(상점명)',
       '품목명',
-      '결제액',
-      '세금',
+      '수량',
+      '통화',
+      '결제액(현지화)',
+      '환산액(USD)',
+      '세금(현지화)',
       '품목분류',
-      '품목별 간이과세율(%)'
+      '품목별 간이과세율(%)',
+      '면세한도 합산여부'
     ];
 
-    const rows: string[][] = [];
+    const dataRows: (string | number)[][] = [];
 
     rList.forEach((r) => {
       r.items.forEach((item) => {
         const catLabel = CATEGORY_LABELS[item.category] || item.category;
         const taxRatePercent = ((CATEGORY_TAX_RATES[item.category] ?? 0.15) * 100).toFixed(0) + '%';
-        const priceStr = `${item.currency || 'USD'} ${item.priceLocal?.toLocaleString() ?? 0}`;
-        const taxStr = item.taxLocal ? `${item.currency || 'USD'} ${item.taxLocal.toLocaleString()}` : `${item.currency || 'USD'} 0`;
+        const isExcluded = item.excludedFromDuty ? '제외' : '포함';
 
-        rows.push([
+        dataRows.push([
           folderName,
           r.date || '',
+          r.storeName || '',
           item.name || '',
-          priceStr,
-          taxStr,
+          item.quantity ?? 1,
+          item.currency || 'USD',
+          item.priceLocal ?? 0,
+          item.priceUSD ?? 0,
+          item.taxLocal ?? 0,
           catLabel,
-          taxRatePercent
+          taxRatePercent,
+          isExcluded
         ]);
       });
     });
 
-    if (rows.length === 0) {
+    if (dataRows.length === 0) {
       alert('다운로드할 구매 내역 품목이 없습니다.');
       return;
     }
 
-    const csvContent = [
-      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    ].join('\r\n');
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
 
-    // UTF-8 BOM (\uFEFF) ensures Excel opens Korean characters correctly
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
+    // Set column widths for comfortable Excel readability
+    worksheet['!cols'] = [
+      { wch: 18 }, // 여행명
+      { wch: 12 }, // 날짜
+      { wch: 20 }, // 상점명
+      { wch: 25 }, // 품목명
+      { wch: 8 },  // 수량
+      { wch: 8 },  // 통화
+      { wch: 14 }, // 결제액
+      { wch: 14 }, // 환산액(USD)
+      { wch: 12 }, // 세금
+      { wch: 18 }, // 품목분류
+      { wch: 18 }, // 과세율
+      { wch: 14 }  // 면세합산여부
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '구매내역');
+
     const safeFolderName = folderName.replace(/[/\\?%*:|"<>]/g, '_');
-    link.setAttribute('download', `${safeFolderName}_구매내역.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    XLSX.writeFile(workbook, `${safeFolderName}_구매내역.xlsx`);
   };
 
   // Group all receipts by folder for Tab 1

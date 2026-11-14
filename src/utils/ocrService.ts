@@ -108,15 +108,202 @@ export function hasReceiptKeywords(text: string): boolean {
 }
 
 /**
- * 3. Tesseract.js v7 엔진 최적화 인식 실행
- * - tessedit_pageseg_mode: '4' (가변 크기 텍스트 열/블록) 또는 '6'
- * - load_system_dawg: '0', load_freq_dawg: '0' (사전 기반 강제 교정 해제)
- * - 최소 신뢰도(Confidence) & 앵커 키워드 검증
+ * Gemini 2.5 Flash-Lite 모델 구조화(JSON) 영수증 파싱 API 호출 함수
+ * 6가지 필수 항목: date, store_name, items(name, quantity, price), tax, total_amount, currency
+ */
+export async function parseWithGeminiFlashLite(
+  imageSrc: string,
+  onProgress?: (progress: number, status: string) => void
+): Promise<ParsedReceiptData | null> {
+  const backendUrl = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8080';
+  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+  // 1. Spring Boot 백엔드가 가동 중인 경우 백엔드 호출 시도
+  try {
+    onProgress?.(30, 'Gemini 2.5 Flash-Lite Java 백엔드 연동 중...');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4초 타임아웃
+
+    const resp = await fetch(`${backendUrl}/api/receipts/parse-base64`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageSrc }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (resp.ok) {
+      const data = await resp.json();
+      onProgress?.(80, '백엔드 Gemini 2.5 Flash-Lite 구조화 데이터 수신 완료!');
+      return convertGeminiDataToParsedReceipt(data, 'Backend Vertex AI Gemini 2.5 Flash-Lite');
+    }
+  } catch (backendErr) {
+    // 백엔드가 아직 실행되지 않은 경우 조용히 클라이언트 직결 또는 OCR로 전환
+    console.info('Backend service not reached, falling back to direct API / Tesseract:', backendErr);
+  }
+
+  // 2. 클라이언트 직접 Gemini 2.5 Flash-Lite API 호출 시도
+  if (geminiApiKey) {
+    try {
+      onProgress?.(40, 'Gemini 2.5 Flash-Lite 모델 직접 구조화(JSON) 분석 중...');
+      let mimeType = 'image/jpeg';
+      let base64Data = imageSrc;
+      if (imageSrc.includes(',')) {
+        const parts = imageSrc.split(',');
+        if (parts[0].includes('image/png')) mimeType = 'image/png';
+        else if (parts[0].includes('image/webp')) mimeType = 'image/webp';
+        base64Data = parts[1];
+      }
+
+      // Gemini 2.5 Flash-Lite API 호출 (Structured Outputs 강제)
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiApiKey}`;
+      const payload = {
+        contents: [
+          {
+            parts: [
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: base64Data
+                }
+              },
+              {
+                text: "다국어 영수증 이미지에서 6가지 필수 항목(date [YYYY-MM-DD], store_name, items [name 한국어 번역, quantity 기본 1, price 숫자], tax 숫자, total_amount 숫자, currency 통화코드)을 지정된 스키마에 따라 JSON으로 추출하세요."
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              date: { type: "STRING", description: "YYYY-MM-DD format date" },
+              store_name: { type: "STRING", description: "Store name on receipt" },
+              items: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    name: { type: "STRING", description: "Product name translated into Korean" },
+                    quantity: { type: "INTEGER", description: "Quantity of product, default 1" },
+                    price: { type: "NUMBER", description: "Price in local currency" }
+                  },
+                  required: ["name", "quantity", "price"]
+                }
+              },
+              tax: { type: "NUMBER", description: "Total tax amount" },
+              total_amount: { type: "NUMBER", description: "Total payment amount" },
+              currency: { type: "STRING", description: "Currency code e.g. JPY, USD, EUR, KRW" }
+            },
+            required: ["date", "store_name", "items", "tax", "total_amount", "currency"]
+          }
+        }
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const resData = await response.json();
+        const jsonText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (jsonText) {
+          const parsedJson = JSON.parse(jsonText);
+          onProgress?.(85, 'Gemini 2.5 Flash-Lite 구조화 데이터 파싱 성공!');
+          return convertGeminiDataToParsedReceipt(parsedJson, 'Gemini 2.5 Flash-Lite');
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Direct Gemini API call failed, falling back to Tesseract:', apiErr);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Gemini 구조화 응답(JSON)을 앱의 ParsedReceiptData 포맷으로 변환
+ */
+function convertGeminiDataToParsedReceipt(data: any, source: string): ParsedReceiptData {
+  const currency = (data.currency || 'USD').toUpperCase() as any;
+  const totalLocal = Number(data.total_amount) || 0;
+  const totalTax = Number(data.tax) || 0;
+  const storeName = data.store_name || '해외 가맹점';
+  const date = data.date || new Date().toISOString().split('T')[0];
+
+  // 환율 기본값
+  const rateToUSD = currency === 'JPY' ? 153.5 : currency === 'KRW' ? 1380 : currency === 'EUR' ? 0.92 : 1;
+
+  const rawItems = Array.isArray(data.items) ? data.items : [];
+  const items: ProductItem[] = rawItems.map((it: any, index: number) => {
+    const itemName = it.name || `구매품목 #${index + 1}`;
+    const itemQty = Number(it.quantity) || 1;
+    const itemPrice = Number(it.price) || 0;
+    const priceUSD = parseFloat((itemPrice / rateToUSD).toFixed(2));
+
+    // 카테고리 자동 유추
+    let category: ProductCategory = 'cosmetics_general';
+    const lowerName = itemName.toLowerCase();
+    if (/향수|perfume|fragrance/i.test(lowerName)) {
+      category = 'perfume';
+    } else if (/위스키|와인|주류|술|사케|맥주|liquor|whisky|wine/i.test(lowerName)) {
+      category = 'liquor';
+    } else if (/담배|cigar|tobacco|cigarette/i.test(lowerName)) {
+      category = 'tobacco';
+    } else if (/가방|핸드백|백팩|지갑|bag|wallet/i.test(lowerName)) {
+      category = 'bags';
+    } else if (/옷|의류|셔츠|바지|자켓|신발|shoes|clothing/i.test(lowerName)) {
+      category = 'clothing_shoes';
+    }
+
+    return {
+      id: 'item-' + Date.now() + '-' + index,
+      name: itemName,
+      category,
+      priceLocal: itemPrice,
+      currency,
+      priceUSD,
+      quantity: itemQty,
+      taxLocal: parseFloat((itemPrice * 0.1).toFixed(2))
+    };
+  });
+
+  return {
+    rawText: `[${source}] ${storeName} Total: ${totalLocal} ${currency}`,
+    confidence: 98,
+    storeName,
+    date,
+    currency,
+    totalLocal,
+    totalTax,
+    items
+  };
+}
+
+/**
+ * 3. 통합 영수증 파싱 실행:
+ * - 1순위: Gemini 2.5 Flash-Lite 기반 다국어 영수증 구조화(JSON) 파싱
+ * - 2순위: Tesseract.js v7 엔진 전처리 및 다국어 OCR 파이프라인 Fallback
  */
 export async function recognizeReceipt(
   imageSrc: string,
   onProgress?: (progress: number, status: string) => void
 ): Promise<ParsedReceiptData> {
+  // 1. Gemini 2.5 Flash-Lite 모델 파싱 시도
+  try {
+    const geminiResult = await parseWithGeminiFlashLite(imageSrc, onProgress);
+    if (geminiResult && geminiResult.items.length > 0) {
+      onProgress?.(100, 'Gemini Flash-Lite 분석 완료!');
+      return geminiResult;
+    }
+  } catch (geminiError) {
+    console.warn('Gemini 2.5 Flash-Lite pipeline skipped:', geminiError);
+  }
+
+  // 2. Tesseract.js v7 파이프라인 Fallback
   onProgress?.(10, '이미지 명암 대비 및 이진화 전처리 중...');
   const processedDataUrl = await preprocessReceiptImage(imageSrc);
 
@@ -125,7 +312,6 @@ export async function recognizeReceipt(
   let ocrResult: any = null;
 
   try {
-    // 다국어 결합: kor+eng+jpn (자주 쓰이는 주요 언어로 최적화하여 속도 및 메모리 오류 방지)
     worker = await createWorker(['kor', 'eng', 'jpn'], 1, {
       logger: (m) => {
         if (m.status === 'recognizing text') {
@@ -135,11 +321,10 @@ export async function recognizeReceipt(
       }
     });
 
-    // Tesseract v7 파라미터 최적화
     await worker.setParameters({
       tessedit_pageseg_mode: '4', // 4: Column/Receipt segmentation
-      load_system_dawg: '0',      // 사전 교정 OFF
-      load_freq_dawg: '0',        // 빈도 사전 OFF
+      load_system_dawg: '0',
+      load_freq_dawg: '0',
     });
 
     onProgress?.(45, '문자열 및 숫자 추출 실행 중...');
@@ -169,11 +354,9 @@ export async function recognizeReceipt(
 
   onProgress?.(85, '신뢰도 및 영수증 앵커 키워드 검증 중...');
 
-  // 1. 최소 신뢰도 필터링 & 영수증 필수 키워드 검증
   const hasAnchor = hasReceiptKeywords(text);
   const isValidLength = text.trim().length >= 10;
 
-  // 신뢰도가 30점 미만이거나 필수 키워드가 전혀 없으면 인식 실패로 명확히 판정
   if (!isValidLength || (!hasAnchor && confidence < 40)) {
     console.warn('OCR Validation Failed:', { confidence, hasAnchor, length: text.length });
     throw new Error('RECEIPT_RECOGNITION_FAILED');

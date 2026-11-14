@@ -32,18 +32,47 @@ export async function getFirebaseUserCredential(username: string): Promise<UserC
 }
 
 // 2. 유저 계정 정보 저장/초기화
-export async function saveFirebaseUserCredential(username: string, pass: string): Promise<boolean> {
+export async function saveFirebaseUserCredential(
+  username: string, 
+  pass?: string, 
+  extra?: { freeCaptureCount?: number; isSubscribed?: boolean }
+): Promise<boolean> {
   if (!isFirebaseConfigured || !db) return false;
   try {
     const userDocRef = doc(db, 'users', username);
-    await setDoc(userDocRef, {
+    const dataToSave: any = {
       username,
-      password: pass,
+      updatedAt: Date.now()
+    };
+    if (pass !== undefined) dataToSave.password = pass;
+    if (extra?.freeCaptureCount !== undefined) dataToSave.freeCaptureCount = extra.freeCaptureCount;
+    if (extra?.isSubscribed !== undefined) dataToSave.isSubscribed = extra.isSubscribed;
+
+    await setDoc(userDocRef, dataToSave, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('Failed to save user credential to Firebase:', err);
+    return false;
+  }
+}
+
+// 2-1. 유저의 구독 및 무료 촬영 카운트 업데이트
+export async function updateFirebaseSubscription(
+  username: string,
+  freeCaptureCount: number,
+  isSubscribed: boolean
+): Promise<boolean> {
+  if (!isFirebaseConfigured || !db || !username) return false;
+  try {
+    const userDocRef = doc(db, 'users', username);
+    await setDoc(userDocRef, {
+      freeCaptureCount,
+      isSubscribed,
       updatedAt: Date.now()
     }, { merge: true });
     return true;
   } catch (err) {
-    console.error('Failed to save user credential to Firebase:', err);
+    console.error('Failed to update subscription in Firebase:', err);
     return false;
   }
 }

@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import type { Receipt, ProductItem, ExchangeRates } from '../types';
-import { loadFirebaseReceipts, saveFirebaseReceipt, deleteFirebaseReceipt } from '../services/firebaseService';
+import { 
+  loadFirebaseReceipts, 
+  saveFirebaseReceipt, 
+  deleteFirebaseReceipt, 
+  getFirebaseUserCredential, 
+  updateFirebaseSubscription 
+} from '../services/firebaseService';
 import { isFirebaseConfigured } from '../firebase';
 import { generateFolderName } from '../types';
 
@@ -31,6 +37,11 @@ interface AppContextType {
   updateExchangeRate: (currency: keyof ExchangeRates, rate: number) => void;
   summaryBgColor: string;
   setSummaryBgColor: (color: string) => void;
+  // 구독 및 무료 촬영 카운트
+  freeCaptureCount: number;
+  isSubscribed: boolean;
+  incrementCaptureCount: () => void;
+  setSubscription: (subscribed: boolean) => void;
   // 여행 폴더 생성 정보 (날짜, 국가, 도시)
   tripDate: string;
   setTripDate: (date: string) => void;
@@ -66,6 +77,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [summaryBgColor, setSummaryBgColorState] = useState<string>(() => {
     return localStorage.getItem('dutyfree_summary_bg') || 'gradient-blue';
+  });
+
+  const [freeCaptureCount, setFreeCaptureCountState] = useState<number>(() => {
+    const val = localStorage.getItem('dutyfree_free_capture_count');
+    return val ? parseInt(val, 10) || 0 : 0;
+  });
+
+  const [isSubscribed, setIsSubscribedState] = useState<boolean>(() => {
+    return localStorage.getItem('dutyfree_is_subscribed') === 'true';
   });
 
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(() => {
@@ -205,15 +225,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('dutyfree_receipts', JSON.stringify(receipts));
   }, [receipts]);
 
-  // Firebase 연결 시 유저 변경 시 Firestore에서 영수증 로드
+  // Firebase 연결 시 유저 변경 시 Firestore에서 영수증 및 구독/카운트 로드
   useEffect(() => {
     if (username && isFirebaseConfigured) {
+      // 1. 영수증 로드
       loadFirebaseReceipts(username).then((remoteReceipts: Receipt[]) => {
         if (remoteReceipts && remoteReceipts.length > 0) {
           setReceipts(remoteReceipts);
         } else if (receipts.length > 0) {
           // 로컬 영수증이 있으면 첫 Firebase 업로드 동기화
           receipts.forEach(r => saveFirebaseReceipt(username, r));
+        }
+      });
+
+      // 2. 계정 정보 (무료 촬영 횟수, 구독 상태) 동기화
+      getFirebaseUserCredential(username).then((userCred) => {
+        if (userCred) {
+          if (typeof userCred.freeCaptureCount === 'number') {
+            setFreeCaptureCountState(userCred.freeCaptureCount);
+            localStorage.setItem('dutyfree_free_capture_count', String(userCred.freeCaptureCount));
+          }
+          if (typeof userCred.isSubscribed === 'boolean') {
+            setIsSubscribedState(userCred.isSubscribed);
+            localStorage.setItem('dutyfree_is_subscribed', userCred.isSubscribed ? 'true' : 'false');
+          }
         }
       });
     }
@@ -271,6 +306,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
       [currency]: rate
     }));
+  };
+
+  const incrementCaptureCount = () => {
+    setFreeCaptureCountState(prev => {
+      const next = prev + 1;
+      localStorage.setItem('dutyfree_free_capture_count', String(next));
+      if (username && isFirebaseConfigured) {
+        updateFirebaseSubscription(username, next, isSubscribed);
+      }
+      return next;
+    });
+  };
+
+  const setSubscription = (sub: boolean) => {
+    setIsSubscribedState(sub);
+    localStorage.setItem('dutyfree_is_subscribed', sub ? 'true' : 'false');
+    if (username && isFirebaseConfigured) {
+      updateFirebaseSubscription(username, freeCaptureCount, sub);
+    }
   };
 
   const addReceipt = (receipt: Receipt) => {
@@ -390,6 +444,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateExchangeRate,
         summaryBgColor,
         setSummaryBgColor,
+        freeCaptureCount,
+        isSubscribed,
+        incrementCaptureCount,
+        setSubscription,
         tripDate,
         setTripDate,
         tripCountry,
