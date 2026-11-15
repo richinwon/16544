@@ -64,7 +64,7 @@ export const Screen2Camera: React.FC = () => {
     const isCityInvalid = !manualCity || manualCity.trim() === '' || manualCity === '입력' || manualCity === '도시명:도시입력';
 
     if (isDateInvalid || isCountryInvalid || isCityInvalid) {
-      alert('먼저 저장 할 폴더 정보를 입력해 주세요!');
+      alert('저장 할 폴더 정보를 입력해 주세요!');
       return false;
     }
     return true;
@@ -280,7 +280,7 @@ export const Screen2Camera: React.FC = () => {
   const isCityReady = manualCity && manualCity !== '입력' && manualCity !== '도시명:도시입력' && manualCity.trim() !== '';
   const previewFolder = isDateReady && isCountryReady && isCityReady
     ? generateFolderName(manualDate, manualCountry, manualCity)
-    : '폴더 정보를 입력해주세요';
+    : '저장 폴더명';
 
   return (
     <div className="p-4 space-y-4 pb-24">
@@ -537,7 +537,7 @@ export const Screen2Camera: React.FC = () => {
           ) : (
             <>
               <Sparkles className="w-4 h-4 text-amber-300" />
-              AI 분석 시작하기 ({capturedImages.length}장 · 폴더: {previewFolder})
+              AI 분석 시작하기
             </>
           )}
         </button>

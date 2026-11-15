@@ -12,7 +12,16 @@ import { BottomNavigation } from './components/BottomNavigation';
 export const MainApp: React.FC = () => {
   const { currentScreen, isRegistered } = useApp();
 
+  // 공유된 면세 리포트 링크(?view=report)로 진입한 경우 즉시 리포트 카드 화면을 렌더링
+  const isSharedReportView =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('view') === 'report';
+
   const renderScreen = () => {
+    if (isSharedReportView) {
+      return <Screen4Report />;
+    }
+
     if (!isRegistered || currentScreen === 0) {
       return <Screen0Register />;
     }

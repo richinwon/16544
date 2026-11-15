@@ -36,9 +36,48 @@ export const Screen4Report: React.FC = () => {
     });
   };
 
-  // Calculate duty based strictly on selectedFolder
+  // 공유 링크(?view=report) 파라미터 파싱 (공유된 메시지를 통해 들어왔을 때 리포트 카드 렌더링 지원)
+  const sharedParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isSharedView = sharedParams?.get('view') === 'report' && sharedParams?.has('gen');
+
+  // Calculate duty based strictly on selectedFolder (또는 공유 링크 데이터)
   const allFilteredItems = filteredReceipts.flatMap(r => r.items);
-  const duty = calculateDuty(allFilteredItems, exchangeRates?.KRW || 1380);
+  const calculatedDuty = calculateDuty(allFilteredItems, exchangeRates?.KRW || 1380);
+
+  const activeFolder = (isSharedView && sharedParams?.get('folder')) || selectedFolder;
+
+  const duty = isSharedView && sharedParams
+    ? {
+        ...calculatedDuty,
+        totalGeneralUSD: parseFloat(sharedParams.get('gen') || '0'),
+        dutyFreeLimitUSD: 800,
+        taxableUSD: parseFloat(sharedParams.get('taxable') || '0'),
+        isOverLimit: parseFloat(sharedParams.get('taxable') || '0') > 0,
+        baseTaxUSD: parseFloat(sharedParams.get('base') || '0'),
+        voluntaryDiscountUSD: parseFloat(sharedParams.get('disc') || '0'),
+        voluntaryTaxUSD: parseFloat(sharedParams.get('vol') || '0'),
+        isDiscountCapped: sharedParams.get('capped') === '1',
+        unreportedPenaltyTaxUSD: parseFloat(sharedParams.get('unrep') || '0'),
+        liquor: {
+          ...calculatedDuty.liquor,
+          totalBottles: parseInt(sharedParams.get('liqB') || '0', 10),
+          totalUSD: parseFloat(sharedParams.get('liqU') || '0'),
+          isOver:
+            parseInt(sharedParams.get('liqB') || '0', 10) > 2 ||
+            parseFloat(sharedParams.get('liqU') || '0') > 400,
+        },
+        tobacco: {
+          ...calculatedDuty.tobacco,
+          cartons: parseFloat(sharedParams.get('tob') || '0'),
+          isOver: parseFloat(sharedParams.get('tob') || '0') > 1,
+        },
+        perfume: {
+          ...calculatedDuty.perfume,
+          totalMl: parseInt(sharedParams.get('perf') || '0', 10),
+          isOver: parseInt(sharedParams.get('perf') || '0', 10) > 100,
+        },
+      }
+    : calculatedDuty;
 
   const rawPercent = Math.round((duty.totalGeneralUSD / duty.dutyFreeLimitUSD) * 100);
   const percentUsed = Math.min(100, rawPercent);
@@ -51,15 +90,57 @@ export const Screen4Report: React.FC = () => {
   };
 
   const handleKakaoShare = async () => {
-    const currentUrl = window.location.origin + window.location.pathname;
-    const ua = navigator.userAgent || '';
-    const isAndroid = /Android/i.test(ua);
-    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const baseUrl = window.location.origin + window.location.pathname;
+    const query = new URLSearchParams({
+      view: 'report',
+      folder: activeFolder || '',
+      gen: String(duty.totalGeneralUSD),
+      taxable: String(duty.taxableUSD),
+      base: String(duty.baseTaxUSD),
+      disc: String(duty.voluntaryDiscountUSD),
+      vol: String(duty.voluntaryTaxUSD),
+      capped: duty.isDiscountCapped ? '1' : '0',
+      unrep: String(duty.unreportedPenaltyTaxUSD),
+      liqB: String(duty.liquor.totalBottles),
+      liqU: String(duty.liquor.totalUSD),
+      tob: String(duty.tobacco.cartons),
+      perf: String(duty.perfume.totalMl),
+    });
+    const shareUrl = `${baseUrl}?${query.toString()}`;
 
-    // [1단계] 리포트 주소(URL) 클립보드 즉시 복사 (동기 복사 우선 실행으로 사용자 제스처 유지 및 붙여넣기 오류 방지)
+    const statusText = duty.isOverLimit ? '한도 초과 (과세 대상)' : '면세 범위 내 안전';
+    const remainOrOverText = duty.isOverLimit
+      ? `초과 금액: $${formatUSD(duty.taxableUSD)}`
+      : `잔여 한도: $${formatUSD(Math.max(0, 800 - duty.totalGeneralUSD))}`;
+    const savedKRW = convertUSDToKRW(duty.unreportedPenaltyTaxUSD - duty.voluntaryTaxUSD).toLocaleString();
+
+    // 공유 대상의 채팅방에 면세리포트 페이지 내용이 깔끔하게 붙여넣기/렌더링되도록 정비된 포맷
+    const formattedReportMessage = [
+      `📊 [면세비서] 면세 리포트 (${activeFolder})`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `■ 기본 한도 현황 (${statusText})`,
+      `• 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} / $800.00 (약 ${convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원)`,
+      `• 소진율: ${rawPercent}% (${remainOrOverText})`,
+      ``,
+      `■ 별도 면세 한도 품목 현황`,
+      `• 주류: ${duty.liquor.totalBottles}병 / $${formatUSD(duty.liquor.totalUSD)} [${duty.liquor.isOver ? '초과' : '적합'}]`,
+      `• 담배: ${duty.tobacco.cartons}보루 [${duty.tobacco.isOver ? '초과' : '적합'}]`,
+      `• 향수: ${duty.perfume.totalMl}ml [${duty.perfume.isOver ? '초과' : '적합'}]`,
+      ``,
+      `■ 예상 세금 및 추징금 산출내역`,
+      `• 과세대상: $${formatUSD(duty.taxableUSD)}`,
+      `• 자진 신고 시(30% 감면): $${formatUSD(duty.voluntaryTaxUSD)} (약 ${convertUSDToKRW(duty.voluntaryTaxUSD).toLocaleString()}원)`,
+      `• 미신고 적발 시(40% 가산세): $${formatUSD(duty.unreportedPenaltyTaxUSD)} (약 ${convertUSDToKRW(duty.unreportedPenaltyTaxUSD).toLocaleString()}원)`,
+      `• 자진 신고 절약 금액: +${savedKRW}원 절약!`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `🔗 면세 리포트 상세 카드 보기:`,
+      shareUrl,
+    ].join('\n');
+
+    // [1단계] 정비된 면세리포트 메시지 및 주소 클립보드 즉시 복사 (동기 실행으로 사용자 제스처 유지)
     try {
       const textarea = document.createElement('textarea');
-      textarea.value = currentUrl;
+      textarea.value = formattedReportMessage;
       textarea.setAttribute('readonly', '');
       textarea.style.position = 'fixed';
       textarea.style.top = '-9999px';
@@ -67,7 +148,7 @@ export const Screen4Report: React.FC = () => {
       document.body.appendChild(textarea);
       textarea.focus();
       textarea.select();
-      textarea.setSelectionRange(0, currentUrl.length);
+      textarea.setSelectionRange(0, formattedReportMessage.length);
       document.execCommand('copy');
       document.body.removeChild(textarea);
     } catch (err) {
@@ -75,51 +156,22 @@ export const Screen4Report: React.FC = () => {
     }
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(currentUrl).catch(() => {});
+      navigator.clipboard.writeText(formattedReportMessage).catch(() => {});
     }
 
-    showToast('리포트 주소를 복사했어요!');
+    showToast('면세 리포트 내용을 복사했어요!');
 
-    // [2단계] 카카오톡 앱 연동 실행 ➔ 대화상대 선택 화면('나에게' + '친구/채팅방' 모두 선택 가능) ➔ 채팅창 선택 시 리포트 주소 자동 입력
+    const ua = navigator.userAgent || '';
+    const isAndroid = /Android/i.test(ua);
+
+    // [2단계] '공유' 할 앱을 선택하는 단계(OS 공유 시트) 없이,
+    // 곧바로 카카오톡 내 대화상대 선택 화면(전체 / 친구 / 최근 공유 + 하단 '나에게')으로 직행하고 리포트 내용을 자동 붙여넣기
     if (isAndroid) {
-      // Android: ConnectBroadcastActivity 컴포넌트를 명시적으로 지정하여 '나에게'만 단독 실행되는 현상을 방지하고,
-      // '나에게(나와의 채팅)' 및 모든 '친구/채팅방 대화상대'를 선택할 수 있는 카카오톡 공유 대상 선택 화면으로 직행
-      const kakaoFriendPickerIntent = `intent:#Intent;action=android.intent.action.SEND;type=text/plain;package=com.kakao.talk;component=com.kakao.talk/com.kakao.talk.activity.friend.picker.ConnectBroadcastActivity;S.android.intent.extra.TEXT=${encodeURIComponent(currentUrl)};S.browser_fallback_url=${encodeURIComponent(currentUrl)};end`;
+      const kakaoFriendPickerIntent = `intent:#Intent;action=android.intent.action.SEND;type=text/plain;package=com.kakao.talk;component=com.kakao.talk/com.kakao.talk.activity.friend.picker.ConnectBroadcastActivity;S.android.intent.extra.TEXT=${encodeURIComponent(formattedReportMessage)};S.browser_fallback_url=${encodeURIComponent(shareUrl)};end`;
       window.location.href = kakaoFriendPickerIntent;
       return;
     }
 
-    if (isIOS) {
-      // iOS: Web Share API를 통해 단일 URL 텍스트 전달 ('나에게' -> '나와의 채팅' 선택 시 오류 없이 주소 자동 입력)
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            text: currentUrl,
-          });
-          return;
-        } catch (err: any) {
-          if (err && err.name === 'AbortError') {
-            return;
-          }
-        }
-      }
-      window.location.href = 'kakaotalk://';
-      return;
-    }
-
-    // 기타/데스크톱 환경: Web Share API 지원 시 호출, 미지원 시 카카오톡 스킴 호출
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          text: currentUrl,
-        });
-        return;
-      } catch (err: any) {
-        if (err && err.name === 'AbortError') {
-          return;
-        }
-      }
-    }
     window.location.href = 'kakaotalk://';
   };
 
@@ -128,7 +180,12 @@ export const Screen4Report: React.FC = () => {
       {/* Top Header with Folder Selection Dropdown on the left - 타이틀 정가운데 정렬 */}
       <div className="relative flex items-center justify-center pt-2">
         <button
-          onClick={() => setCurrentScreen(1)}
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.location.search) {
+              window.history.replaceState({}, '', window.location.pathname);
+            }
+            setCurrentScreen(1);
+          }}
           className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
         >
           <ArrowLeft className="w-4 h-4" /> 홈으로
