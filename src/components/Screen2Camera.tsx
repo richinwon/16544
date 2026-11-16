@@ -41,7 +41,7 @@ export const Screen2Camera: React.FC = () => {
   
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
-  const [ocrProgress, setOcrProgress] = useState(0);
+  const [, setOcrProgress] = useState(0);
   const [, setFailCount] = useState(0);
 
   const [showRetryModal, setShowRetryModal] = useState(false);
@@ -198,36 +198,48 @@ export const Screen2Camera: React.FC = () => {
   };
 
   const handleStartAnalysis = async () => {
+    if (isAnalyzing) return;
     if (capturedImages.length === 0) return;
     if (!validateFolderOrAlert()) return;
     if (!checkSubscriptionOrAlert()) return;
 
-    setIsAnalyzing(true);
-    setOcrProgress(5);
-    setOcrStatus('영수증 분석 준비 중...');
-
-    // 사용자 수동 입력 폴더명 강제 적용 (자동 폴더 생성 대체)
-    const fixedFolderName = generateFolderName(manualDate, manualCountry, manualCity);
-
     try {
+      setIsAnalyzing(true);
+      setOcrProgress(10);
+      setOcrStatus('AI가 영수증을 분석 중입니다...');
+
+      // 사용자 수동 입력 폴더명 강제 적용 (자동 폴더 생성 대체)
+      const fixedFolderName = generateFolderName(manualDate, manualCountry, manualCity);
       const validReceipts: Receipt[] = [];
 
       for (let idx = 0; idx < capturedImages.length; idx++) {
         const imgSrc = capturedImages[idx];
-        setOcrStatus(`영수증 ${idx + 1}/${capturedImages.length}장 다국어 AI 분석 중...`);
+        setOcrStatus('AI가 영수증을 분석 중입니다...');
         
-        const parsed = await recognizeReceipt(imgSrc, (prog, msg) => {
+        const parsed = await recognizeReceipt(imgSrc, (prog) => {
           setOcrProgress(prog);
-          setOcrStatus(`[${idx + 1}/${capturedImages.length}] ${msg}`);
+          setOcrStatus('AI가 영수증을 분석 중입니다...');
         });
 
-        if (!parsed || !parsed.items || parsed.items.length === 0) {
-          throw new Error('RECEIPT_RECOGNITION_FAILED');
+        // 방어 로직: classification이 RECEIPT가 아니거나 필수 값(상점명, 총 금액, 품목)이 누락된 경우 즉시 거부
+        if (
+          !parsed ||
+          parsed.classification !== 'RECEIPT' ||
+          !parsed.storeName ||
+          !parsed.totalLocal ||
+          parsed.totalLocal <= 0 ||
+          !Array.isArray(parsed.items) ||
+          parsed.items.length === 0
+        ) {
+          throw new Error('NOT_RECEIPT_IMAGE');
         }
 
-        const totalUSD = parsed.items.reduce((sum, item) => sum + (item.priceUSD || item.priceLocal || 0), 0);
-        if (totalUSD <= 0) {
-          throw new Error('RECEIPT_RECOGNITION_FAILED');
+        const totalUSD = parsed.items.reduce(
+          (sum, item) => sum + (Number(item.priceUSD) || 0),
+          0
+        );
+        if (!Number.isFinite(totalUSD) || totalUSD <= 0) {
+          throw new Error('NOT_RECEIPT_IMAGE');
         }
 
         // 로컬스토리지 및 DB 용량 초과로 인한 빈화면 크래시 방지를 위해 경량 썸네일로 압축
@@ -235,11 +247,11 @@ export const Screen2Camera: React.FC = () => {
 
         const newReceipt: Receipt = {
           id: 'receipt-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).substring(2, 7),
-          date: manualDate,
+          date: manualDate || parsed.date || new Date().toISOString().split('T')[0],
           country: manualCountry,
           city: manualCity,
           folderName: fixedFolderName,
-          storeName: parsed.storeName || `${manualCity} 매장 #${idx + 1}`,
+          storeName: parsed.storeName,
           imageUrl: compactThumbnail,
           items: parsed.items,
           totalUSD: Math.round(totalUSD * 100) / 100,
@@ -265,8 +277,14 @@ export const Screen2Camera: React.FC = () => {
       alert(`✨ 영수증 분석 완료!\n여행 폴더 [${fixedFolderName}]에 안전하게 저장되었습니다.`);
       setCurrentScreen(3);
     } catch (err: any) {
-      console.warn('OCR verification failed:', err);
-      alert('인식에 실패하였습니다');
+      console.warn('Receipt AI analysis error:', err);
+      const errMsg = String(err?.message || '');
+      if (errMsg === 'NOT_RECEIPT_IMAGE' || errMsg === 'RECEIPT_RECOGNITION_FAILED') {
+        alert('영수증이 아닌 이미지로 판단되었습니다. 실제 영수증을 촬영해 주세요.');
+        setShowManualModal(true);
+      } else {
+        alert('AI 분석 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      }
     } finally {
       setIsAnalyzing(false);
       setOcrProgress(0);
@@ -532,7 +550,7 @@ export const Screen2Camera: React.FC = () => {
           {isAnalyzing ? (
             <>
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              {ocrStatus || 'AI 다국어 OCR 분석 중...'} ({ocrProgress}%)
+              {ocrStatus || 'AI가 영수증을 분석 중입니다...'}
             </>
           ) : (
             <>

@@ -1,121 +1,7 @@
-import { createWorker } from 'tesseract.js';
 import type { ProductItem, ProductCategory } from '../types';
 
-/**
- * 1. 캔버스를 이용한 영수증 이미지 전처리 파이프라인
- * - Grayscale (흑백화)
- * - Contrast 극대화 (대비 배율 factor)
- * - Binarization (임계값 128~130 기준 적응형 이진화)
- */
-export async function preprocessReceiptImage(imageSrc: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let width = img.naturalWidth || img.width;
-      let height = img.naturalHeight || img.height;
-
-      // 해상도가 너무 높으면 모바일 메모리 부하 방지, 너무 낮으면 최소 1000px 확보
-      const MAX_DIM = 1800;
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) {
-          height = Math.round((height * MAX_DIM) / width);
-          width = MAX_DIM;
-        } else {
-          width = Math.round((width * MAX_DIM) / height);
-          height = MAX_DIM;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) {
-        resolve(imageSrc);
-        return;
-      }
-
-      ctx.drawImage(img, 0, 0, width, height);
-      const imgData = ctx.getImageData(0, 0, width, height);
-      const data = imgData.data;
-
-      // 흑백 변환 및 대비(Contrast) 극대화 (contrast = 1.6)
-      const contrast = 1.6;
-      const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
-
-      for (let i = 0; i < data.length; i += 4) {
-        // Luminance Grayscale
-        const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-
-        // Contrast adjustment
-        let color = factor * (avg - 128) + 128;
-        color = Math.min(255, Math.max(0, color));
-
-        // Simple/Adaptive Binarization (임계값 128 기준)
-        const thresholdColor = color > 130 ? 255 : 0;
-
-        data[i] = thresholdColor;     // R
-        data[i + 1] = thresholdColor; // G
-        data[i + 2] = thresholdColor; // B
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = () => {
-      resolve(imageSrc);
-    };
-    img.src = imageSrc;
-  });
-}
-
-/**
- * 영수증 원본 이미지를 로컬스토리지(5MB 제한) 및 Firestore(1MB 제한)에
- * 안전하게 저장하기 위한 경량 썸네일 압축 함수 (최대 800px, JPEG 0.6)
- */
-export async function compressReceiptThumbnail(imageSrc: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        let width = img.naturalWidth || img.width || 800;
-        let height = img.naturalHeight || img.height || 800;
-
-        const MAX_DIM = 800;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(imageSrc.length < 300000 ? imageSrc : '');
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
-      } catch {
-        resolve(imageSrc.length < 300000 ? imageSrc : '');
-      }
-    };
-    img.onerror = () => {
-      resolve(imageSrc.length < 300000 ? imageSrc : '');
-    };
-    img.src = imageSrc;
-  });
-}
-
 export interface ParsedReceiptData {
+  classification: 'RECEIPT' | 'NOT_RECEIPT' | 'UNCERTAIN';
   rawText: string;
   confidence: number;
   storeName: string;
@@ -128,581 +14,572 @@ export interface ParsedReceiptData {
   items: ProductItem[];
 }
 
-/**
- * 2. 영수증 앵커 키워드 검증 (Anchor Verification)
- * 단일 글자('원', '$', '¥' 등 OCR 노이즈로 오인식되기 쉬운 문자)는 제외하고,
- * 실제 영수증에서만 등장하는 명확한 핵심 키워드만 검증합니다.
- */
-export function hasReceiptKeywords(text: string): boolean {
-  const keywords = [
-    // 한국어 영수증 필수 키워드
-    '합계', '총액', '소계', '결제금액', '받을금액', '받은금액', '부가세', '부가가치세', '결제', '영수증',
-    '과세', '면세', '승인번호', '가맹점', '사업자', '단가', '수량', '신용카드', '카드번호', '거스름돈',
-    // 영어 영수증 필수 키워드
-    'total', 'subtotal', 'sub-total', 'amount', 'tax', 'vat', 'gst', 'balance', 'cash', 'visa', 'mastercard',
-    'receipt', 'invoice', 'change', 'price', 'qty', 'discount', 'payment', 'thank you',
-    // 일본어 영수증 필수 키워드
-    '合計', '小計', '税込', '税抜', '消費税', 'お預り', 'お預かり', 'お釣り', 'レシート', '領収書', '領収証', '買上', '内税', '外税',
-    // 베트남어 / 태국어 / 중국어 영수증 키워드
-    'tổng', 'thành tiền', 'tiền mặt', 'hóa đơn', 'thuế',
-    'รวม', 'ภาษี', 'ใบเสร็จ',
-    '合计', '总计', '小计', '发票', '收据'
-  ];
-  const lowerText = text.toLowerCase();
-  return keywords.some(kw => lowerText.includes(kw));
+export interface GeminiReceiptResponseSchema {
+  classification: 'RECEIPT' | 'NOT_RECEIPT' | 'UNCERTAIN';
+  merchantName: string | null;
+  purchaseDate: string | null;
+  totalAmount: number | null;
+  currency?: string | null;
+  tax?: number | null;
+  items: Array<{
+    name: string;
+    category?: string | null;
+    tax?: number | null;
+    price: number;
+    quantity?: number | null;
+  }>;
 }
 
+const VALID_CATEGORIES: ProductCategory[] = [
+  'cosmetics_general',
+  'clothing_shoes',
+  'fur',
+  'bags',
+  'deer_antler',
+  'liquor',
+  'tobacco',
+  'perfume',
+  'restaurant',
+  'transportation',
+];
+
 /**
- * Gemini 2.5 Flash-Lite 모델 구조화(JSON) 영수증 파싱 API 호출 함수
- * 6가지 필수 항목: date, store_name, items(name, quantity, price), tax, total_amount, currency
+ * 영수증 원본 이미지를 로컬스토리지(5MB 제한) 및 Firestore(1MB 제한)에
+ * 안전하게 저장하기 위한 경량 썸네일 압축 함수 (최대 800px, JPEG 0.6)
  */
-export async function parseWithGeminiFlashLite(
-  imageSrc: string,
-  onProgress?: (progress: number, status: string) => void
-): Promise<ParsedReceiptData | null> {
-  const backendUrl = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:8080';
-  const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-  // 1. Spring Boot 백엔드가 가동 중인 경우 백엔드 호출 시도
-  try {
-    onProgress?.(30, 'Gemini 2.5 Flash-Lite Java 백엔드 연동 중...');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5초 타임아웃
-
-    const resp = await fetch(`${backendUrl}/api/receipts/parse-base64`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageSrc }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.is_receipt === false || !Array.isArray(data.items) || data.items.length === 0 || Number(data.total_amount) <= 0) {
-        throw new Error('NOT_A_RECEIPT');
-      }
-      onProgress?.(80, '백엔드 Gemini 2.5 Flash-Lite 구조화 데이터 수신 완료!');
-      return convertGeminiDataToParsedReceipt(data, 'Backend Vertex AI Gemini 2.5 Flash-Lite');
-    }
-  } catch (backendErr: any) {
-    if (backendErr?.message === 'NOT_A_RECEIPT') {
-      throw new Error('RECEIPT_RECOGNITION_FAILED');
-    }
-    console.info('Backend service not reached, falling back to direct API / Tesseract:', backendErr);
-  }
-
-  // 2. 클라이언트 직접 Gemini 2.5 Flash-Lite API 호출 시도
-  if (geminiApiKey) {
+export async function compressReceiptThumbnail(imageSrc: string): Promise<string> {
+  return new Promise((resolve) => {
     try {
-      onProgress?.(40, 'Gemini 2.5 Flash-Lite 모델 직접 구조화(JSON) 분석 중...');
-      let mimeType = 'image/jpeg';
-      let base64Data = imageSrc;
-      if (imageSrc.includes(',')) {
-        const parts = imageSrc.split(',');
-        if (parts[0].includes('image/png')) mimeType = 'image/png';
-        else if (parts[0].includes('image/webp')) mimeType = 'image/webp';
-        base64Data = parts[1];
+      if (!imageSrc || typeof imageSrc !== 'string') {
+        resolve('');
+        return;
       }
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.naturalWidth || img.width || 800;
+          let height = img.naturalHeight || img.height || 800;
 
-      // Gemini 2.5 Flash-Lite API 호출 (Structured Outputs 강제 + 영수증 진위 판별)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiApiKey}`;
-      const payload = {
-        contents: [
-          {
-            parts: [
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: base64Data
-                }
-              },
-              {
-                text: "이미지가 실제 영수증(구매 내역서/계산서)인지 먼저 판별(is_receipt)하세요. 실제 영수증이 아니라면 is_receipt를 false로, items를 빈 배열로, total_amount를 0으로 반환하세요. 실제 영수증인 경우에만 6가지 필수 항목(date [YYYY-MM-DD], store_name, items [name 한국어 번역, quantity 기본 1, price 숫자], tax 숫자, total_amount 숫자, currency 통화코드)을 지정된 스키마에 따라 JSON으로 추출하세요."
-              }
-            ]
+          const MAX_DIM = 800;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
           }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              is_receipt: { type: "BOOLEAN", description: "True ONLY if the image is a real purchase receipt or invoice" },
-              date: { type: "STRING", description: "YYYY-MM-DD format date" },
-              store_name: { type: "STRING", description: "Store name on receipt" },
-              items: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    name: { type: "STRING", description: "Product name translated into Korean" },
-                    quantity: { type: "INTEGER", description: "Quantity of product, default 1" },
-                    price: { type: "NUMBER", description: "Price in local currency" }
-                  },
-                  required: ["name", "quantity", "price"]
-                }
-              },
-              tax: { type: "NUMBER", description: "Total tax amount" },
-              total_amount: { type: "NUMBER", description: "Total payment amount" },
-              currency: { type: "STRING", description: "Currency code e.g. JPY, USD, EUR, KRW" }
-            },
-            required: ["is_receipt", "date", "store_name", "items", "tax", "total_amount", "currency"]
+
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(imageSrc.length < 300000 ? imageSrc : '');
+            return;
           }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        } catch {
+          resolve(imageSrc.length < 300000 ? imageSrc : '');
         }
       };
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        const resData = await response.json();
-        const jsonText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (jsonText) {
-          const parsedJson = JSON.parse(jsonText);
-          if (parsedJson.is_receipt === false || !Array.isArray(parsedJson.items) || parsedJson.items.length === 0 || Number(parsedJson.total_amount) <= 0) {
-            throw new Error('NOT_A_RECEIPT');
-          }
-          onProgress?.(85, 'Gemini 2.5 Flash-Lite 구조화 데이터 파싱 성공!');
-          return convertGeminiDataToParsedReceipt(parsedJson, 'Gemini 2.5 Flash-Lite');
-        }
-      }
-    } catch (apiErr: any) {
-      if (apiErr?.message === 'NOT_A_RECEIPT') {
-        throw new Error('RECEIPT_RECOGNITION_FAILED');
-      }
-      console.warn('Direct Gemini API call failed, falling back to Tesseract:', apiErr);
+      img.onerror = () => {
+        resolve(imageSrc.length < 300000 ? imageSrc : '');
+      };
+      img.src = imageSrc;
+    } catch {
+      resolve('');
     }
-  }
-
-  return null;
+  });
 }
 
 /**
- * Gemini 구조화 응답(JSON)을 앱의 ParsedReceiptData 포맷으로 변환
+ * Gemini API 전송을 위해 고해상도 이미지를 안전한 해상도(최대 1600px JPEG)의 Base64로 변환
  */
-function convertGeminiDataToParsedReceipt(data: any, source: string): ParsedReceiptData {
-  const currency = (data.currency || 'USD').toUpperCase() as any;
-  const totalLocal = Number(data.total_amount) || 0;
-  const totalTax = Number(data.tax) || 0;
-  const storeName = data.store_name || '해외 가맹점';
-  const date = data.date || new Date().toISOString().split('T')[0];
+async function prepareImageForGemini(imageSrc: string): Promise<{ mimeType: string; base64Data: string }> {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!imageSrc || typeof imageSrc !== 'string') {
+        reject(new Error('INVALID_IMAGE_SOURCE'));
+        return;
+      }
 
-  // 환율 기본값
-  const rateToUSD = currency === 'JPY' ? 153.5 : currency === 'KRW' ? 1380 : currency === 'EUR' ? 0.92 : 1;
+      const extractRawBase64 = (dataUrl: string) => {
+        let mimeType = 'image/jpeg';
+        let base64Data = dataUrl;
+        if (dataUrl.includes(',')) {
+          const parts = dataUrl.split(',');
+          if (parts[0].includes('image/png')) mimeType = 'image/png';
+          else if (parts[0].includes('image/webp')) mimeType = 'image/webp';
+          else if (parts[0].includes('image/jpeg') || parts[0].includes('image/jpg')) mimeType = 'image/jpeg';
+          base64Data = parts[1] || '';
+        }
+        return { mimeType, base64Data: base64Data.trim() };
+      };
 
-  const rawItems = Array.isArray(data.items) ? data.items : [];
-  const items: ProductItem[] = rawItems.map((it: any, index: number) => {
-    const itemName = it.name || `구매품목 #${index + 1}`;
-    const itemQty = Number(it.quantity) || 1;
-    const itemPrice = Number(it.price) || 0;
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        try {
+          let width = img.naturalWidth || img.width || 0;
+          let height = img.naturalHeight || img.height || 0;
+          if (width <= 0 || height <= 0) {
+            resolve(extractRawBase64(imageSrc));
+            return;
+          }
+
+          const MAX_DIM = 1600;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(extractRawBase64(imageSrc));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(extractRawBase64(optimizedDataUrl));
+        } catch {
+          resolve(extractRawBase64(imageSrc));
+        }
+      };
+      img.onerror = () => {
+        const fallback = extractRawBase64(imageSrc);
+        if (fallback.base64Data) {
+          resolve(fallback);
+        } else {
+          reject(new Error('IMAGE_LOAD_ERROR'));
+        }
+      };
+      img.src = imageSrc;
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * 품목명 및 Gemini 분류값을 바탕으로 앱 표준 ProductCategory 매핑
+ */
+function resolveCategory(rawCategory: string | null | undefined, itemName: string): ProductCategory {
+  if (rawCategory && VALID_CATEGORIES.includes(rawCategory as ProductCategory)) {
+    return rawCategory as ProductCategory;
+  }
+  const lowerName = (itemName || '').toLowerCase();
+  if (/향수|코롱|오드퍼퓸|오드뚜왈렛|perfume|fragrance|cologne|edp|edt/i.test(lowerName)) {
+    return 'perfume';
+  }
+  if (/위스키|와인|주류|술|사케|맥주|소주|보드카|샴페인|고량주|liquor|whisky|whiskey|wine|sake|beer/i.test(lowerName)) {
+    return 'liquor';
+  }
+  if (/담배|시가|전자담배|연초|cigar|tobacco|cigarette|iqos|heets/i.test(lowerName)) {
+    return 'tobacco';
+  }
+  if (/가방|핸드백|백팩|지갑|클러치|숄더백|토트백|bag|wallet|handbag|backpack|pouch/i.test(lowerName)) {
+    return 'bags';
+  }
+  if (/옷|의류|셔츠|바지|자켓|코트|패딩|니트|원피스|티셔츠|신발|운동화|구두|스니커즈|모자|양말|shoes|clothing|shirt|pants|jacket|sneakers/i.test(lowerName)) {
+    return 'clothing_shoes';
+  }
+  if (/모피|밍크|퍼자켓|fur|mink/i.test(lowerName)) {
+    return 'fur';
+  }
+  if (/녹용|사슴뿔|antler/i.test(lowerName)) {
+    return 'deer_antler';
+  }
+  if (/식당|음식점|레스토랑|카페|커피|라멘|스시|식사|도시락|음료|restaurant|cafe|coffee|dining/i.test(lowerName)) {
+    return 'restaurant';
+  }
+  if (/택시|전철|지하철|버스|기차|신칸센|교통|우버|항공|열차|taxi|train|bus|subway|uber|metro|transport/i.test(lowerName)) {
+    return 'transportation';
+  }
+  return 'cosmetics_general';
+}
+
+/**
+ * Gemini Vision JSON 응답에 대한 철저한 유효성 검증(Guardrail) 및 앱 데이터 변환
+ * - classification이 "RECEIPT"가 아니거나 필수 값(merchantName, totalAmount, items)이 누락된 경우
+ *   절대 허구의 데이터를 만들지 않고 즉시 NOT_RECEIPT_IMAGE 에러를 발생시킵니다.
+ */
+function validateAndConvertGeminiReceipt(rawJson: any): ParsedReceiptData {
+  if (!rawJson || typeof rawJson !== 'object') {
+    throw new Error('NOT_RECEIPT_IMAGE');
+  }
+
+  const classification = String(rawJson.classification || '').toUpperCase().trim();
+
+  // 1. classification 검증: 반드시 정상 영수증("RECEIPT")이어야만 통과
+  if (classification !== 'RECEIPT') {
+    throw new Error('NOT_RECEIPT_IMAGE');
+  }
+
+  // 2. 상점명(merchantName) 필수 검증 (허구/기본값 생성 절대 금지)
+  const rawMerchant = rawJson.merchantName ?? rawJson.store_name ?? null;
+  const merchantName = typeof rawMerchant === 'string' ? rawMerchant.trim() : '';
+  const forbiddenPlaceholders = [
+    '',
+    'null',
+    'undefined',
+    'none',
+    'n/a',
+    'unknown',
+    '알수없음',
+    '알 수 없음',
+    '상점명 없음',
+    '미상',
+    '해외 가맹점',
+    '영수증 발급 매장',
+  ];
+  if (!merchantName || forbiddenPlaceholders.includes(merchantName.toLowerCase())) {
+    throw new Error('NOT_RECEIPT_IMAGE');
+  }
+
+  // 3. 총 결제 금액(totalAmount) 필수 검증
+  const rawTotal = rawJson.totalAmount ?? rawJson.total_amount ?? null;
+  const totalAmount = rawTotal !== null && rawTotal !== undefined ? Number(rawTotal) : NaN;
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    throw new Error('NOT_RECEIPT_IMAGE');
+  }
+
+  // 4. 결제일(purchaseDate) 파싱 (YYYY-MM-DD 형식 검증, 없으면 null 허용)
+  const rawDate = rawJson.purchaseDate ?? rawJson.date ?? null;
+  let purchaseDate: string | undefined = undefined;
+  if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate.trim())) {
+    purchaseDate = rawDate.trim();
+  }
+
+  // 5. 통화(currency) 정규화 (한국 영수증은 KRW 기본 인식)
+  const rawCurrency = String(rawJson.currency || 'KRW').toUpperCase().trim();
+  const validCurrencies = ['KRW', 'JPY', 'USD', 'EUR', 'CNY'] as const;
+  const currency: 'USD' | 'KRW' | 'JPY' | 'EUR' | 'CNY' = (validCurrencies as readonly string[]).includes(rawCurrency)
+    ? (rawCurrency as 'USD' | 'KRW' | 'JPY' | 'EUR' | 'CNY')
+    : 'KRW';
+
+  const rateToUSD =
+    currency === 'KRW'
+      ? 1380
+      : currency === 'JPY'
+      ? 153.5
+      : currency === 'EUR'
+      ? 0.92
+      : currency === 'CNY'
+      ? 7.23
+      : 1;
+
+  // 6. 세금(tax) 파싱
+  const totalTax = Number.isFinite(Number(rawJson.tax)) && Number(rawJson.tax) >= 0 ? Number(rawJson.tax) : 0;
+
+  // 7. 품목 리스트(items) 검증 (허구 품목 생성 금지)
+  const rawItems = Array.isArray(rawJson.items) ? rawJson.items : [];
+  if (rawItems.length === 0) {
+    throw new Error('NOT_RECEIPT_IMAGE');
+  }
+
+  const items: ProductItem[] = [];
+  rawItems.forEach((it: any, index: number) => {
+    if (!it || typeof it !== 'object') return;
+    const itemName = typeof it.name === 'string' ? it.name.trim() : '';
+    const itemPrice = Number(it.price);
+    const itemQty = Number.isFinite(Number(it.quantity)) && Number(it.quantity) >= 1 ? Math.floor(Number(it.quantity)) : 1;
+    const itemTax = Number.isFinite(Number(it.tax)) && Number(it.tax) >= 0 ? Number(it.tax) : 0;
+
+    if (!itemName || forbiddenPlaceholders.includes(itemName.toLowerCase())) return;
+    if (!Number.isFinite(itemPrice) || itemPrice <= 0) return;
+
+    const category = resolveCategory(it.category, itemName);
     const priceUSD = parseFloat((itemPrice / rateToUSD).toFixed(2));
 
-    // 카테고리 자동 유추
-    let category: ProductCategory = 'cosmetics_general';
-    const lowerName = itemName.toLowerCase();
-    if (/향수|perfume|fragrance/i.test(lowerName)) {
-      category = 'perfume';
-    } else if (/위스키|와인|주류|술|사케|맥주|liquor|whisky|wine/i.test(lowerName)) {
-      category = 'liquor';
-    } else if (/담배|cigar|tobacco|cigarette/i.test(lowerName)) {
-      category = 'tobacco';
-    } else if (/가방|핸드백|백팩|지갑|bag|wallet/i.test(lowerName)) {
-      category = 'bags';
-    } else if (/옷|의류|셔츠|바지|자켓|신발|shoes|clothing/i.test(lowerName)) {
-      category = 'clothing_shoes';
-    }
-
-    return {
-      id: 'item-' + Date.now() + '-' + index,
+    const productItem: ProductItem = {
+      id: `item-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
       name: itemName,
       category,
       priceLocal: itemPrice,
       currency,
-      priceUSD,
+      priceUSD: priceUSD > 0 ? priceUSD : 0.01,
       quantity: itemQty,
-      taxLocal: parseFloat((itemPrice * 0.1).toFixed(2))
+      taxLocal: itemTax,
     };
+
+    if (category === 'liquor') {
+      productItem.liquorBottles = itemQty;
+    } else if (category === 'tobacco') {
+      productItem.tobaccoPacks = itemQty * 10;
+    } else if (category === 'perfume') {
+      productItem.perfumeMl = 100;
+    }
+
+    items.push(productItem);
   });
 
+  if (items.length === 0) {
+    throw new Error('NOT_RECEIPT_IMAGE');
+  }
+
   return {
-    rawText: `[${source}] ${storeName} Total: ${totalLocal} ${currency}`,
-    confidence: 98,
-    storeName,
-    date,
+    classification: 'RECEIPT',
+    rawText: `[Gemini Vision] ${merchantName} (${totalAmount} ${currency})`,
+    confidence: 99,
+    storeName: merchantName,
+    date: purchaseDate,
     currency,
-    totalLocal,
+    totalLocal: totalAmount,
     totalTax,
-    items
+    items,
   };
 }
 
+const GEMINI_SYSTEM_INSTRUCTION = `당신은 실제 영수증 진위 판별 및 데이터 정밀 추출을 수행하는 전문 AI입니다.
+반드시 지정된 JSON 구조로만 응답해야 하며, 다음 규칙을 엄격히 준수하세요:
+
+[1. 영수증 진위 판별 (classification) - 환각(Hallucination) 원천 차단]
+- "RECEIPT": 실제 매장/식당/백화점/편의점/면세점 등에서 발급된 종이 영수증, 카드 매출전표, 전자 영수증인 경우에만 "RECEIPT"로 분류하세요. 실제 한국 영수증(상호/가맹점명, 사업자번호, 승인번호, 품목 또는 합계/결제금액, 부가세 등이 포함된 영수증)과 해외 영수증을 정확히 인식하세요.
+- "NOT_RECEIPT": 컴퓨터 모니터나 노트북의 소스 코드 화면(VS Code, IDE, 터미널, JSON/HTML/JS/TS 코드 등), 일반 문서, 책, 웹사이트 캡처, 채팅 화면, 인물, 풍경, 사물 사진 등은 화면 안에 'total', 'price', 'tax', 'receipt', 숫자 등이 포함되어 있더라도 영수증이 아니므로 무조건 "NOT_RECEIPT"로 분류하세요.
+- "UNCERTAIN": 이미지가 너무 흐리거나 잘려서 실제 영수증인지 확신할 수 없거나 상점명과 결제 금액을 읽을 수 없는 경우 "UNCERTAIN"으로 분류하세요.
+
+[2. 허구 데이터 생성 절대 금지]
+- classification이 "NOT_RECEIPT" 또는 "UNCERTAIN"인 경우, 절대 임의의 상점명이나 품목, 금액을 지어내지 말고 반드시 merchantName: null, purchaseDate: null, totalAmount: null, items: [] 로 반환하세요.
+- 이미지에 실제로 존재하지 않는 텍스트를 추측하여 채워 넣는 환각(Hallucination)을 절대 금지합니다.
+
+[3. 정상 영수증("RECEIPT") 데이터 추출 규칙]
+- merchantName: 영수증에 인쇄된 실제 상점명/가맹점명 (식별 불가 시 null)
+- purchaseDate: 영수증에 인쇄된 결제일 (반드시 "YYYY-MM-DD" 형식, 식별 불가 시 null)
+- totalAmount: 영수증의 최종 총 결제 금액 (콤마를 제외한 순수 숫자, 식별 불가 시 null)
+- currency: 영수증 통화 코드. 한국 영수증(원, ₩, KRW, 부가세, 가맹점 등)은 반드시 "KRW", 일본 영수증(¥, 円)은 "JPY", 미국/달러는 "USD", 유럽(€)은 "EUR", 중국(元, ¥)은 "CNY"로 설정하세요.
+- tax: 영수증에 표시된 부가세/소비세/세금 합계 숫자 (없으면 0)
+- items: 영수증에 기재된 구매 품목 배열.
+  * 각 품목은 name(품목명, 외국어인 경우 한국어로 자연스럽게 번역), category(카테고리 코드), tax(품목 세금 숫자, 없으면 0), price(해당 품목 결제 금액 숫자), quantity(수량 정수, 기본 1)를 포함합니다.
+  * 만약 상세 품목명이 따로 적혀 있지 않은 한국 신용카드 단말기 영수증(카드 매출전표)이라면, items 배열에 [{ "name": "<상점명> 결제건", "category": "cosmetics_general", "tax": <부가세 또는 0>, "price": <총 결제 금액>, "quantity": 1 }] 1건을 담아 반환하세요.
+  * category 값은 반드시 다음 중 하나로 지정하세요: "cosmetics_general"(화장품/일반물품), "clothing_shoes"(의류/신발), "bags"(가방/핸드백), "fur"(모피제품), "deer_antler"(녹용), "liquor"(주류), "tobacco"(담배), "perfume"(향수), "restaurant"(음식점/식당/카페), "transportation"(교통비).`;
+
+const GEMINI_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    classification: {
+      type: 'STRING',
+      enum: ['RECEIPT', 'NOT_RECEIPT', 'UNCERTAIN'],
+      description: '영수증 진위 분류: 정상 영수증은 RECEIPT, 코드 화면/일반 문서/비영수증은 NOT_RECEIPT, 불확실하면 UNCERTAIN',
+    },
+    merchantName: {
+      type: 'STRING',
+      nullable: true,
+      description: '영수증에 인쇄된 실제 상점명/가맹점명 (없으면 null)',
+    },
+    purchaseDate: {
+      type: 'STRING',
+      nullable: true,
+      description: '결제일 YYYY-MM-DD 형식 (없으면 null)',
+    },
+    totalAmount: {
+      type: 'NUMBER',
+      nullable: true,
+      description: '총 결제 금액 숫자 (없으면 null)',
+    },
+    currency: {
+      type: 'STRING',
+      nullable: true,
+      description: '통화 코드: KRW, JPY, USD, EUR, CNY 중 하나',
+    },
+    tax: {
+      type: 'NUMBER',
+      nullable: true,
+      description: '총 세금/부가세 금액 숫자 (없으면 0)',
+    },
+    items: {
+      type: 'ARRAY',
+      description: '구매 품목 리스트 (비영수증이면 빈 배열 [])',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: {
+            type: 'STRING',
+            description: '품목명',
+          },
+          category: {
+            type: 'STRING',
+            description: '품목 카테고리 코드 (cosmetics_general, clothing_shoes, bags, fur, deer_antler, liquor, tobacco, perfume, restaurant, transportation)',
+          },
+          tax: {
+            type: 'NUMBER',
+            nullable: true,
+            description: '세금 금액 (숫자, 없으면 0)',
+          },
+          price: {
+            type: 'NUMBER',
+            description: '품목 금액 (숫자)',
+          },
+          quantity: {
+            type: 'INTEGER',
+            nullable: true,
+            description: '수량 (기본 1)',
+          },
+        },
+        required: ['name', 'category', 'tax', 'price'],
+      },
+    },
+  },
+  required: ['classification', 'merchantName', 'purchaseDate', 'totalAmount', 'items'],
+};
+
 /**
- * 3. 통합 영수증 파싱 실행:
- * - 1순위: Gemini 2.5 Flash-Lite 기반 다국어 영수증 구조화(JSON) 파싱
- * - 2순위: Tesseract.js v7 엔진 전처리 및 다국어 OCR 파이프라인 Fallback
+ * 외부 OCR 없이 오직 Google Gemini Vision API만을 사용하여 영수증 이미지를 직접 분석합니다.
  */
 export async function recognizeReceipt(
   imageSrc: string,
   onProgress?: (progress: number, status: string) => void
 ): Promise<ParsedReceiptData> {
-  // 1. Gemini 2.5 Flash-Lite 모델 파싱 시도
-  try {
-    const geminiResult = await parseWithGeminiFlashLite(imageSrc, onProgress);
-    if (geminiResult && geminiResult.items.length > 0) {
-      onProgress?.(100, 'Gemini Flash-Lite 분석 완료!');
-      return geminiResult;
-    }
-  } catch (geminiError: any) {
-    if (geminiError?.message === 'RECEIPT_RECOGNITION_FAILED') {
-      throw geminiError;
-    }
-    console.warn('Gemini 2.5 Flash-Lite pipeline skipped:', geminiError);
+  onProgress?.(15, 'AI가 영수증을 분석 중입니다...');
+
+  const { mimeType, base64Data } = await prepareImageForGemini(imageSrc);
+  if (!base64Data) {
+    throw new Error('INVALID_IMAGE_DATA');
   }
 
-  // 2. Tesseract.js v7 파이프라인 Fallback
-  onProgress?.(10, '이미지 명암 대비 및 이진화 전처리 중...');
-  const processedDataUrl = await preprocessReceiptImage(imageSrc);
+  const geminiApiKey = (
+    import.meta.env.VITE_GEMINI_API_KEY ||
+    import.meta.env.VITE_FIREBASE_API_KEY ||
+    ''
+  ).trim();
 
-  onProgress?.(25, 'Tesseract v7 엔진 초기화 중...');
-  let worker: any = null;
-  let ocrResult: any = null;
-
-  try {
-    worker = await createWorker(['kor', 'eng', 'jpn'], 1, {
-      logger: (m) => {
-        if (m.status === 'recognizing text') {
-          const prog = Math.round(30 + (m.progress || 0) * 55);
-          onProgress?.(prog, `영수증 문자 분석 중 (${Math.round((m.progress || 0) * 100)}%)...`);
-        }
-      }
-    });
-
-    await worker.setParameters({
-      tessedit_pageseg_mode: '4', // 4: Column/Receipt segmentation
-      load_system_dawg: '0',
-      load_freq_dawg: '0',
-    });
-
-    onProgress?.(45, '문자열 및 숫자 추출 실행 중...');
-    ocrResult = await worker.recognize(processedDataUrl);
-  } catch (err) {
-    console.warn('Initial recognition failed, fallback without dawg settings:', err);
-    try {
-      if (worker) await worker.terminate();
-      worker = await createWorker(['kor', 'eng'], 1);
-      ocrResult = await worker.recognize(processedDataUrl);
-    } catch (fallbackErr) {
-      console.error('OCR worker fallback error:', fallbackErr);
-      throw new Error('RECEIPT_RECOGNITION_FAILED');
-    }
-  } finally {
-    if (worker) {
-      try {
-        await worker.terminate();
-      } catch (e) {
-        // ignore
-      }
-    }
+  if (!geminiApiKey) {
+    throw new Error('MISSING_GEMINI_API_KEY');
   }
 
-  const text = ocrResult?.data?.text || '';
-  const confidence = ocrResult?.data?.confidence ?? 0;
+  onProgress?.(40, 'AI가 영수증을 분석 중입니다...');
 
-  onProgress?.(85, '신뢰도 및 영수증 앵커 키워드 검증 중...');
-
-  const hasAnchor = hasReceiptKeywords(text);
-  const isValidLength = text.trim().length >= 15;
-
-  // 영수증 필수 키워드(hasAnchor)가 없거나 신뢰도가 기준 미달이면 무조건 인식 실패 처리
-  if (!isValidLength || !hasAnchor || confidence < 45) {
-    console.warn('OCR Validation Failed:', { confidence, hasAnchor, length: text.length });
-    throw new Error('RECEIPT_RECOGNITION_FAILED');
-  }
-
-  onProgress?.(95, '영수증 데이터 분석 및 항목 파싱 중...');
-  return parseReceiptText(text, confidence);
-}
-
-/**
- * 4. 엄격한 영수증 텍스트 파싱 및 Mathematical Validation
- */
-export function parseReceiptText(text: string, confidence = 0): ParsedReceiptData {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) {
-    throw new Error('RECEIPT_RECOGNITION_FAILED');
-  }
-
-  // 1) 상호명 추출 (상단 라인 중 의미 있는 텍스트)
-  let storeName = '';
-  for (let i = 0; i < Math.min(5, lines.length); i++) {
-    const line = lines[i];
-    if (line.length >= 2 && !/^\d{4}[-./]/.test(line) && !/tel|phone|fax|주소|date|tax|total/i.test(line)) {
-      const cleaned = line.replace(/[^\w\s가-힣ぁ-んァ-ヶ一-龥]/g, '').trim();
-      if (cleaned.length >= 2) {
-        storeName = cleaned;
-        break;
-      }
-    }
-  }
-  if (!storeName) storeName = '영수증 발급 매장';
-
-  // 2) 날짜 추출 (다양한 영수증 포맷 지원: YYYY-MM-DD, YY/MM/DD, DD/MM/YYYY, YYYY년 MM월 DD일 등)
-  let detectedDate: string | undefined = undefined;
-  
-  // Format A: 2026-11-09 또는 26/11/09 (년-월-일)
-  const ymdRegex = /(20\d{2}|\d{2})[-/.년\s]+(0?[1-9]|1[0-2])[-/.월\s]+(0?[1-9]|[12]\d|3[01])/;
-  // Format B: 09/11/2026 또는 09-11-26 (일-월-년: 유럽/동남아 영수증 다수)
-  const dmyRegex = /(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])[-/.](20\d{2}|\d{2})/;
-
-  for (const line of lines) {
-    const matchYMD = line.match(ymdRegex);
-    if (matchYMD) {
-      let year = matchYMD[1];
-      if (year.length === 2) year = '20' + year;
-      const month = matchYMD[2].padStart(2, '0');
-      const day = matchYMD[3].padStart(2, '0');
-      const yNum = parseInt(year);
-      if (yNum >= 2020 && yNum <= 2035) {
-        detectedDate = `${year}-${month}-${day}`;
-        break;
-      }
-    }
-
-    const matchDMY = line.match(dmyRegex);
-    if (matchDMY) {
-      let year = matchDMY[3];
-      if (year.length === 2) year = '20' + year;
-      const month = matchDMY[2].padStart(2, '0');
-      const day = matchDMY[1].padStart(2, '0');
-      const yNum = parseInt(year);
-      if (yNum >= 2020 && yNum <= 2035) {
-        detectedDate = `${year}-${month}-${day}`;
-        break;
-      }
-    }
-  }
-
-  // 3) 통화 및 국가/도시 추정 (키워드 매칭 정밀도 강화)
-  let detectedCurrency: 'USD' | 'KRW' | 'JPY' | 'EUR' | 'CNY' = 'USD';
-  let detectedCountry = '';
-  let detectedCity = '';
-
-  const lowerText = text.toLowerCase();
-
-  // 일본 체크 (지명 우선 매칭)
-  if (
-    /[\u3040-\u309F\u30A0-\u30FF]/.test(text) ||
-    lowerText.includes('japan') ||
-    lowerText.includes('jpy') ||
-    text.includes('¥') ||
-    text.includes('円') ||
-    text.includes('일본') ||
-    lowerText.includes('tokyo') || lowerText.includes('osaka') || lowerText.includes('fukuoka') || lowerText.includes('kyoto') || lowerText.includes('sapporo') ||
-    text.includes('도쿄') || text.includes('오사카') || text.includes('후쿠오카') || text.includes('교토') || text.includes('삿포로')
-  ) {
-    detectedCurrency = 'JPY';
-    detectedCountry = '일본';
-    if (lowerText.includes('osaka') || text.includes('오사카') || text.includes('大阪')) detectedCity = '오사카';
-    else if (lowerText.includes('fukuoka') || text.includes('후쿠오카') || text.includes('福岡')) detectedCity = '후쿠오카';
-    else if (lowerText.includes('kyoto') || text.includes('교토') || text.includes('京都')) detectedCity = '교토';
-    else if (lowerText.includes('sapporo') || text.includes('삿포로') || text.includes('札幌')) detectedCity = '삿포로';
-    else if (lowerText.includes('okinawa') || text.includes('오키나와') || text.includes('沖縄')) detectedCity = '오키나와';
-    else detectedCity = '도쿄';
-  } 
-  // 프랑스 / 유럽 체크
-  else if (text.includes('€') || lowerText.includes('eur') || lowerText.includes('paris') || lowerText.includes('france') || text.includes('파리') || text.includes('프랑스')) {
-    detectedCurrency = 'EUR';
-    detectedCountry = '프랑스';
-    detectedCity = '파리';
-  }
-  // 이탈리아 체크
-  else if (lowerText.includes('rome') || lowerText.includes('roma') || lowerText.includes('milan') || lowerText.includes('italy') || text.includes('로마') || text.includes('밀라노') || text.includes('이탈리아')) {
-    detectedCurrency = 'EUR';
-    detectedCountry = '이탈리아';
-    detectedCity = lowerText.includes('milan') || text.includes('밀라노') ? '밀라노' : '로마';
-  }
-  // 태국 체크
-  else if (/[\u0E00-\u0E7F]/.test(text) || lowerText.includes('thb') || lowerText.includes('baht') || lowerText.includes('bangkok') || lowerText.includes('thailand') || text.includes('방콕') || text.includes('태국')) {
-    detectedCurrency = 'USD';
-    detectedCountry = '태국';
-    detectedCity = lowerText.includes('phuket') || text.includes('푸켓') ? '푸켓' : '방콕';
-  }
-  // 베트남 체크
-  else if (/[À-ỹ]/.test(text) || lowerText.includes('vnd') || lowerText.includes('vietnam') || lowerText.includes('hanoi') || lowerText.includes('da nang') || text.includes('다낭') || text.includes('하노이') || text.includes('베트남')) {
-    detectedCurrency = 'USD';
-    detectedCountry = '베트남';
-    detectedCity = lowerText.includes('da nang') || text.includes('다낭') ? '다낭' : '하노이';
-  }
-  // 대만 체크
-  else if (lowerText.includes('twd') || lowerText.includes('taipei') || lowerText.includes('taiwan') || text.includes('대만') || text.includes('타이베이')) {
-    detectedCurrency = 'USD';
-    detectedCountry = '대만';
-    detectedCity = '타이베이';
-  }
-  // 중국 체크
-  else if (/[\u4E00-\u9FA5]/.test(text) && (lowerText.includes('cny') || text.includes('元') || lowerText.includes('china') || text.includes('중국') || lowerText.includes('shanghai') || text.includes('상하이') || text.includes('베이징'))) {
-    detectedCurrency = 'CNY';
-    detectedCountry = '중국';
-    detectedCity = lowerText.includes('beijing') || text.includes('베이징') ? '베이징' : '상하이';
-  }
-  // 한국 체크
-  else if (text.includes('원') || lowerText.includes('krw') || text.includes('₩') || text.includes('사업자') || text.includes('부가세') || text.includes('서울')) {
-    detectedCurrency = 'KRW';
-    detectedCountry = '대한민국';
-    detectedCity = '서울';
-  }
-
-  const rateToUSD = detectedCurrency === 'KRW' ? 1380 : detectedCurrency === 'JPY' ? 153.5 : detectedCurrency === 'CNY' ? 7.23 : detectedCurrency === 'EUR' ? 0.92 : 1;
-
-  // 4) 금액 추출 및 Total/Subtotal/Tax 패턴 탐색
-  let detectedTotal = 0;
-  let detectedTax = 0;
-
-  // 라인별로 '합계/TOTAL' 키워드와 함께 등장한 금액 우선 탐색
-  const totalKeywords = ['합계', 'total', '총액', '소계', 'subtotal', 'amount', '결제금액', '받을금액', '받은금액', 'お預り', 'お預かり', '合計', '小計', '税込'];
-  for (const line of lines) {
-    const lLower = line.toLowerCase();
-    if (totalKeywords.some(kw => lLower.includes(kw))) {
-      const nums = line.match(/[\d,]+(\.\d{1,2})?/g);
-      if (nums && nums.length > 0) {
-        const val = parseFloat(nums[nums.length - 1].replace(/,/g, ''));
-        if (!isNaN(val) && val > 0 && val < 50000000 && val > detectedTotal) {
-          detectedTotal = val;
-        }
-      }
-    }
-    // Tax 탐색
-    if (lLower.includes('tax') || lLower.includes('vat') || lLower.includes('세액') || lLower.includes('부가세') || lLower.includes('消費税')) {
-      const nums = line.match(/[\d,]+(\.\d{1,2})?/g);
-      if (nums && nums.length > 0) {
-        const val = parseFloat(nums[nums.length - 1].replace(/,/g, ''));
-        if (!isNaN(val) && val > 0 && val < 10000000) {
-          detectedTax = val;
-        }
-      }
-    }
-  }
-
-  // 5) 품목 리스트 파싱
-  const items: ProductItem[] = [];
-
-  for (const line of lines) {
-    const lineLower = line.toLowerCase();
-
-    // 합계/소계/결제 라인은 품목에서 제외
-    if (totalKeywords.some(kw => lineLower.includes(kw)) || lineLower.includes('change') || lineLower.includes('tax')) {
-      continue;
-    }
-
-    let cat: ProductCategory = 'cosmetics_general';
-    let isCategoryMatch = false;
-
-    if (/perfume|fragrance|cologne|향수|코롱/i.test(lineLower)) {
-      cat = 'perfume';
-      isCategoryMatch = true;
-    } else if (/wine|whisky|whiskey|liquor|sake|beer|주류|와인|위스키/i.test(lineLower)) {
-      cat = 'liquor';
-      isCategoryMatch = true;
-    } else if (/tobacco|cigarette|cigar|담배/i.test(lineLower)) {
-      cat = 'tobacco';
-      isCategoryMatch = true;
-    } else if (/bag|wallet|handbag|가방|지갑|핸드백/i.test(lineLower)) {
-      cat = 'bags';
-      isCategoryMatch = true;
-    } else if (/shirt|pants|jacket|shoes|의류|신발|자켓/i.test(lineLower)) {
-      cat = 'clothing_shoes';
-      isCategoryMatch = true;
-    } else if (/cosmetic|cream|serum|화장품|크림/i.test(lineLower)) {
-      cat = 'cosmetics_general';
-      isCategoryMatch = true;
-    }
-
-    if (isCategoryMatch) {
-      const rowNums = line.match(/[\d,]+(\.\d{1,2})?/g);
-      let rowPrice = 0;
-      if (rowNums && rowNums.length > 0) {
-        rowPrice = parseFloat(rowNums[rowNums.length - 1].replace(/,/g, '')) || 0;
-      }
-
-      const itemName = line.replace(/[\d,.$¥€₩]/g, '').trim() || '인식된 품목';
-      if (itemName.length >= 2 && (rowPrice > 0 || detectedTotal > 0)) {
-        const finalLocalPrice = rowPrice > 0 ? rowPrice : detectedTotal;
-        const itemObj: ProductItem = {
-          id: 'ocr-' + Date.now() + '-' + items.length,
-          name: itemName,
-          category: cat,
-          priceLocal: finalLocalPrice,
-          currency: detectedCurrency,
-          priceUSD: parseFloat((finalLocalPrice / rateToUSD).toFixed(2)),
-          quantity: 1,
-          taxLocal: parseFloat((finalLocalPrice * 0.1).toFixed(2))
-        };
-        if (cat === 'perfume') {
-          itemObj.perfumeMl = 100;
-        }
-        items.push(itemObj);
-      }
-    }
-  }
-
-  // 품목이 특정되지 않은 경우: 반드시 명확한 합계 금액(detectedTotal > 0)이나 가격 포맷 라인이 존재해야만 영수증으로 인정!
-  if (items.length === 0) {
-    if (detectedTotal <= 0) {
-      // 명확한 가격 형식(콤마 구분 숫자 예: 1,000 또는 소수점 두자리 예: 12.50 또는 통화기호 결합 숫자)이 있는지 확인
-      const formattedPriceRegex = /(?:[¥$€₩]\s*\d+|\d{1,3}(?:,\d{3})+|\d+\.\d{2}|\d+\s*(?:원|円|엔))/g;
-      const validPrices: number[] = [];
-      for (const line of lines) {
-        const matches = line.match(formattedPriceRegex);
-        if (matches) {
-          matches.forEach(m => {
-            const numStr = m.replace(/[^0-9.]/g, '');
-            const val = parseFloat(numStr);
-            if (!isNaN(val) && val > 0 && val < 50000000) {
-              validPrices.push(val);
-            }
-          });
-        }
-      }
-      if (validPrices.length >= 1) {
-        validPrices.sort((a, b) => b - a);
-        detectedTotal = validPrices[0];
-      } else {
-        // 영수증 합계액도 없고 가격 형식도 전혀 없는 경우 -> 영수증이 아님!
-        throw new Error('RECEIPT_RECOGNITION_FAILED');
-      }
-    }
-
-    items.push({
-      id: 'ocr-' + Date.now() + '-item',
-      name: storeName ? `${storeName} 구매물품` : '영수증 구매 품목',
-      category: 'cosmetics_general',
-      priceLocal: detectedTotal,
-      currency: detectedCurrency,
-      priceUSD: parseFloat((detectedTotal / rateToUSD).toFixed(2)),
-      quantity: 1,
-      taxLocal: detectedTax > 0 ? detectedTax : parseFloat((detectedTotal * 0.1).toFixed(2))
-    });
-  }
-
-  const finalTotal = detectedTotal > 0 ? detectedTotal : items.reduce((sum, it) => sum + it.priceLocal, 0);
-  if (finalTotal <= 0 || items.length === 0) {
-    throw new Error('RECEIPT_RECOGNITION_FAILED');
-  }
-
-  return {
-    rawText: text,
-    confidence,
-    storeName,
-    date: detectedDate,
-    country: detectedCountry,
-    city: detectedCity,
-    currency: detectedCurrency,
-    totalLocal: finalTotal,
-    totalTax: detectedTax > 0 ? detectedTax : Math.round(finalTotal * 0.1),
-    items
+  const requestBody = {
+    systemInstruction: {
+      parts: [{ text: GEMINI_SYSTEM_INSTRUCTION }],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          },
+          {
+            text: '이 이미지를 분석하여 실제 영수증인지(RECEIPT / NOT_RECEIPT / UNCERTAIN) 판별하고, 컴퓨터 코드 화면이나 일반 문서/비영수증이면 즉시 NOT_RECEIPT로 분류하세요. 실제 영수증(한국 영수증 및 해외 영수증)인 경우에만 상점명(merchantName), 결제일(purchaseDate), 총 결제 금액(totalAmount), 품목 리스트(items)를 지정된 JSON 구조로 정확히 응답하세요.',
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.0,
+      responseMimeType: 'application/json',
+      responseSchema: GEMINI_RESPONSE_SCHEMA,
+    },
   };
+
+  // 호출 엔드포인트 구성 (최신 활성 Gemini Vision 모델 우선 적용)
+  const models = [
+    'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
+  ];
+  const endpoints: Array<{ url: string; headers: Record<string, string>; useSchema: boolean }> = [];
+
+  for (const model of models) {
+    endpoints.push({
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      useSchema: true,
+    });
+  }
+  // 스키마 미지원 모델 대비 JSON-only 폴백 엔드포인트
+  endpoints.push({
+    url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    useSchema: false,
+  });
+
+  let lastApiError: Error | null = null;
+  let rawJsonResult: any = null;
+
+  for (const ep of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      const bodyPayload = ep.useSchema
+        ? requestBody
+        : {
+            ...requestBody,
+            generationConfig: {
+              temperature: 0.0,
+              responseMimeType: 'application/json',
+            },
+          };
+
+      const response = await fetch(ep.url, {
+        method: 'POST',
+        headers: ep.headers,
+        body: JSON.stringify(bodyPayload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        lastApiError = new Error(`GEMINI_HTTP_${response.status}`);
+        continue;
+      }
+
+      const resData = await response.json();
+      const parts: any[] = resData?.candidates?.[0]?.content?.parts || [];
+      const answerPart =
+        parts.find((p) => !p?.thought && typeof p?.text === 'string' && p.text.trim() !== '') ||
+        parts.find((p) => typeof p?.text === 'string' && p.text.trim() !== '');
+      const jsonText = answerPart?.text;
+
+      if (!jsonText || typeof jsonText !== 'string') {
+        lastApiError = new Error('EMPTY_GEMINI_RESPONSE');
+        continue;
+      }
+
+      const cleanedText = jsonText
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+      rawJsonResult = JSON.parse(cleanedText);
+      break;
+    } catch (err: any) {
+      lastApiError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  if (!rawJsonResult) {
+    throw lastApiError || new Error('GEMINI_API_COMMUNICATION_ERROR');
+  }
+
+  onProgress?.(85, 'AI가 영수증을 분석 중입니다...');
+
+  // 철저한 유효성 검증 (Guardrail) 수행
+  const validatedReceipt = validateAndConvertGeminiReceipt(rawJsonResult);
+
+  onProgress?.(100, '분석 완료!');
+  return validatedReceipt;
 }
