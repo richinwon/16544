@@ -100,16 +100,46 @@ export async function updateFirebaseSubscription(
   }
 }
 
-// 3. 유저의 전체 영수증 목록 로드
+// 영수증 저장 기간: 촬영일(createdAt)로부터 30일 (30일 경과 시 자동 삭제)
+export const RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function isReceiptExpired(receipt: Receipt, now: number = Date.now()): boolean {
+  if (!receipt) return false;
+  if (receipt.id === 'sample-receipt-1') return false;
+  if (typeof receipt.expiresAt === 'number') {
+    return now > receipt.expiresAt;
+  }
+  if (typeof receipt.createdAt === 'number' && receipt.createdAt > 0) {
+    return now - receipt.createdAt > RECEIPT_RETENTION_MS;
+  }
+  return false;
+}
+
+// 3. 유저의 전체 영수증 목록 로드 (촬영일로부터 30일 경과한 만료 데이터 자동 삭제)
 export async function loadFirebaseReceipts(username: string): Promise<Receipt[]> {
   if (!isFirebaseConfigured || !db || !username) return [];
   try {
     const receiptsColRef = collection(db, 'users', username, 'receipts');
     const snap = await getDocs(receiptsColRef);
     const list: Receipt[] = [];
+    const expiredDeletions: Promise<void>[] = [];
+    const now = Date.now();
+
     snap.forEach((d) => {
-      list.push(d.data() as Receipt);
+      const data = d.data() as Receipt;
+      if (isReceiptExpired(data, now)) {
+        expiredDeletions.push(deleteDoc(d.ref));
+      } else {
+        list.push(data);
+      }
     });
+
+    if (expiredDeletions.length > 0) {
+      Promise.all(expiredDeletions).catch((err) =>
+        console.warn('Failed to auto-purge expired receipts from Firebase:', err)
+      );
+    }
+
     // 최신순 정렬
     return list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   } catch (err) {
@@ -118,12 +148,23 @@ export async function loadFirebaseReceipts(username: string): Promise<Receipt[]>
   }
 }
 
-// 4. 단일 영수증 저장/수정 (undefined 필드 제거 및 1MB 문서 한도 초과 방지)
+// 4. 단일 영수증 저장/수정 (undefined 필드 제거, 30일 보관 만료일 설정 및 1MB 문서 한도 초과 방지)
 export async function saveFirebaseReceipt(username: string, receipt: Receipt): Promise<boolean> {
   if (!isFirebaseConfigured || !db || !username) return false;
   try {
+    if (isReceiptExpired(receipt)) {
+      await deleteFirebaseReceipt(username, receipt.id);
+      return false;
+    }
     const receiptDocRef = doc(db, 'users', username, 'receipts', receipt.id);
-    const sanitized = JSON.parse(JSON.stringify(receipt));
+    const createdAt = receipt.createdAt || Date.now();
+    const expiresAt = receipt.expiresAt || (createdAt + RECEIPT_RETENTION_MS);
+    const sanitized = JSON.parse(JSON.stringify({
+      ...receipt,
+      createdAt,
+      expiresAt,
+      expireAt: new Date(expiresAt).toISOString(), // Firestore TTL 정책 호환용
+    }));
     if (sanitized.imageUrl && sanitized.imageUrl.length > 700000) {
       delete sanitized.imageUrl;
     }

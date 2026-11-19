@@ -5,6 +5,7 @@ import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER } from '../types';
 import * as XLSX from 'xlsx';
 import { FolderSelect } from './FolderSelect';
 import { ManualReceiptModal } from './ManualReceiptModal';
+import { useScrollLock } from '../utils/useScrollLock';
 import { 
   ArrowLeft, 
   Plus, 
@@ -23,31 +24,26 @@ import {
   Check, 
   AlertCircle,
   Minus,
-  CheckCircle2
+  CheckCircle2,
+  Camera
 } from 'lucide-react';
 
-// 국가별 사후환급 신청 가능한 최소 한도 금액 기준
+// 국가별 사후환급 신청 가능한 최소 한도 금액 기준 (14개국 공식 기준)
 const REFUND_MINIMUMS: { match: string[]; minAmount: number; currency: string }[] = [
-  { match: ['일본', '도쿄', '오사카', '후쿠오카', '교토', '삿포로', '오키나와'], minAmount: 5000, currency: 'JPY' },
-  { match: ['태국', '방콕', '푸켓', '치앙마이'], minAmount: 2000, currency: 'THB' },
-  { match: ['베트남', '다낭', '하노이', '호치민', '나트랑'], minAmount: 2000000, currency: 'VND' },
-  { match: ['대만', '타이베이', '가오슝'], minAmount: 2000, currency: 'TWD' },
-  { match: ['중국', '상하이', '베이징', '광저우'], minAmount: 200, currency: 'CNY' },
+  { match: ['일본', '도쿄', '오사카', '후쿠오카', '교토', '삿포로', '오키나와', '나고야'], minAmount: 5000, currency: 'JPY' },
+  { match: ['태국', '방콕', '푸켓', '치앙마이', '파타야'], minAmount: 2000, currency: 'THB' },
+  { match: ['베트남', '다낭', '하노이', '호치민', '나트랑', '푸꾸옥'], minAmount: 2000000, currency: 'VND' },
+  { match: ['대만', '타이베이', '가오슝', '타이중'], minAmount: 2000, currency: 'TWD' },
+  { match: ['중국', '상하이', '베이징', '광저우', '칭다오', '선전'], minAmount: 200, currency: 'CNY' },
   { match: ['싱가포르'], minAmount: 100, currency: 'SGD' },
   { match: ['인도네시아', '발리', '자카르타'], minAmount: 500000, currency: 'IDR' },
-  { match: ['프랑스', '파리'], minAmount: 100.01, currency: 'EUR' },
-  { match: ['이탈리아', '로마', '밀라노', '피렌체'], minAmount: 70.01, currency: 'EUR' },
+  { match: ['프랑스', '파리', '니스', '리옹'], minAmount: 100.01, currency: 'EUR' },
+  { match: ['이탈리아', '로마', '밀라노', '피렌체', '베네치아'], minAmount: 70.01, currency: 'EUR' },
   { match: ['독일', '베를린', '뮌헨', '프랑크푸르트'], minAmount: 50.01, currency: 'EUR' },
-  { match: ['오스트리아', '비엔나'], minAmount: 75.01, currency: 'EUR' },
-  { match: ['스위스', '취리히', '제네바'], minAmount: 300, currency: 'CHF' },
-  { match: ['아랍에미리트', '두바이', '아부다비'], minAmount: 250, currency: 'AED' },
-  { match: ['호주', '시드니', '멜버른'], minAmount: 300, currency: 'AUD' },
-  { match: ['영국', '런던'], minAmount: 30, currency: 'GBP' },
-];
-
-// 사후 환급 제도가 아예 없거나 기준금액 개념이 적용되지 않는 환급 불가/확인필요 국가 목록
-const NON_REFUNDABLE_COUNTRIES = [
-  '미국', '뉴질랜드', '필리핀', '홍콩', '마카오', '괌', '사이판', '하와이', '캐나다'
+  { match: ['오스트리아', '비엔나', '빈', '잘츠부르크'], minAmount: 75.01, currency: 'EUR' },
+  { match: ['스위스', '취리히', '제네바', '인터라켄', '루체른'], minAmount: 300, currency: 'CHF' },
+  { match: ['아랍에미리트', '두바이', '아부다비', 'UAE'], minAmount: 250, currency: 'AED' },
+  { match: ['호주', '오스트레일리아', '시드니', '멜버른', '브리즈번'], minAmount: 300, currency: 'AUD' },
 ];
 
 export const Screen3List: React.FC = () => {
@@ -85,8 +81,10 @@ export const Screen3List: React.FC = () => {
   // Folder collapse toggle map for Tab 1
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
 
-  // Direct manual receipt add modal (영수증 추가 버튼 클릭 시 바로 팝업)
+  // Direct manual receipt add modal
   const [showDirectManualModal, setShowDirectManualModal] = useState(false);
+  // 영수증 추가 버튼 클릭 시 촬영 / 수기 등록 선택 옵션 모달
+  const [showAddReceiptChoiceModal, setShowAddReceiptChoiceModal] = useState(false);
 
   // Direct item add modal
   const [targetReceiptForAdd, setTargetReceiptForAdd] = useState<string | null>(null);
@@ -114,6 +112,18 @@ export const Screen3List: React.FC = () => {
   const [editPerfumeMl, setEditPerfumeMl] = useState<number>(50);
   const [isEditCatDropdownOpen, setIsEditCatDropdownOpen] = useState(false);
   const [isEditCurrDropdownOpen, setIsEditCurrDropdownOpen] = useState(false);
+
+  useScrollLock(
+    !!selectedReceipt ||
+    !!selectedCategoryDetail ||
+    !!targetReceiptForAdd ||
+    !!editingItemData ||
+    showAddReceiptChoiceModal ||
+    isAddCatDropdownOpen ||
+    isAddCurrDropdownOpen ||
+    isEditCatDropdownOpen ||
+    isEditCurrDropdownOpen
+  );
 
   // 상단 슬라이드다운 Toast 알림 상태 (영수증 수기등록 창과 동일)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -333,70 +343,62 @@ export const Screen3List: React.FC = () => {
 
   // 국가별 사후환급 기준 계산 함수 (개별영수증목록 상단 예상환급액 박스용)
   // [개편된 로직]
-  // 1. 폴더 내 개별 영수증별로 사후 환급 가능한 최소 결제 금액 조건(예: 일본 5,000엔 등)을 충족한 경우에만 해당 영수증 결제액의 7%를 환급액으로 계산하여 합산.
-  // 2. 최소 결제 금액 미만인 영수증은 예상 환급액 합산에서 제외(0원 처리).
-  // 3. 음식점/교통비 품목은 환급 대상 결제액에서 제외.
-  // 4. 소수점 발생 시 통화 정책에 맞게 정수(또는 둘째자리) 처리.
+  // 1. KRW(원화) 통화 품목은 예상 환급액 합산 대상에서 완전히 제외.
+  // 2. 폴더의 국가 정보가 14개국 기준 목록(REFUND_MINIMUMS)에 없거나 판별 불가 시:
+  //    예상환급액 자리에 '-' 표시 및 하단 회색 안내 문구를 '사후환급여부 확인 필요'로 대체.
+  // 3. 국가 목록에 해당하지만 모든 영수증 건이 최소 기준 금액 미만(또는 KRW만 존재)인 경우 '0' 표시.
+  // 4. 최소 기준 금액 이상을 충족한 영수증 건만 골라내어 예상환급액(7%) 합산 및 통화약자+금액 표시.
   const calculateRefundStatus = () => {
     const rList = folderReceiptsMap[selectedFolder] || [];
-    if (rList.length === 0) {
-      return { isUnknownOrNonRefundable: false, amountStr: '0' };
-    }
 
     // Determine country info from folder name or receipts
     const folderText = `${selectedFolder} ${rList[0]?.country || ''} ${rList[0]?.city || ''}`;
-
-    // 사후 환급 불가/확인필요 국가 검사 (미국, 뉴질랜드, 필리핀 등)
-    const isNonRefundable = NON_REFUNDABLE_COUNTRIES.some(keyword => folderText.includes(keyword));
-    if (isNonRefundable) {
-      return { isUnknownOrNonRefundable: true, amountStr: '-' };
-    }
 
     const matchedRule = REFUND_MINIMUMS.find(rule => 
       rule.match.some(keyword => folderText.includes(keyword))
     );
 
+    // 1. 미등록/불명확 국가: 기준 목록에 없는 국가인 경우 무조건 '-' 및 '사후환급여부 확인 필요' 반환
+    if (!matchedRule) {
+      return { isUnknownOrNonRefundable: true, amountStr: '-' };
+    }
+
+    if (rList.length === 0) {
+      return { isUnknownOrNonRefundable: false, amountStr: '0' };
+    }
+
     // 통화별 7% 예상 환급액 누적 맵
     const refundByCurrency: Record<string, number> = {};
 
-    if (matchedRule) {
-      rList.forEach(receipt => {
-        // 음식점 및 교통비 제외한 환급 대상 품목만 필터링
-        const eligibleItems = receipt.items.filter(it => it.category !== 'restaurant' && it.category !== 'transportation');
-        
-        // 영수증 건별 대상 결제 금액 합산
-        const receiptEligibleTotal = eligibleItems.reduce((sum, it) => sum + (it.priceLocal || 0), 0);
-        
-        // 국가별 최소 기준 금액 조건 충족 여부 확인
-        if (receiptEligibleTotal >= matchedRule.minAmount) {
-          // 해당 영수증 결제액 * 7% 계산
-          const receiptCurrency = eligibleItems[0]?.currency || matchedRule.currency;
-          const refundAmount = receiptEligibleTotal * 0.07;
-          refundByCurrency[receiptCurrency] = (refundByCurrency[receiptCurrency] || 0) + refundAmount;
-        }
-      });
-    } else {
-      // 테이블에 명시되지 않은 기타 일반 국가의 경우
-      rList.forEach(receipt => {
-        const eligibleItems = receipt.items.filter(it => it.category !== 'restaurant' && it.category !== 'transportation');
-        const receiptEligibleTotal = eligibleItems.reduce((sum, it) => sum + (it.priceLocal || 0), 0);
-        if (receiptEligibleTotal > 0) {
-          const receiptCurrency = eligibleItems[0]?.currency || 'USD';
-          const refundAmount = receiptEligibleTotal * 0.07;
-          refundByCurrency[receiptCurrency] = (refundByCurrency[receiptCurrency] || 0) + refundAmount;
-        }
-      });
-    }
+    rList.forEach(receipt => {
+      // 음식점, 교통비 및 KRW(원화) 통화 품목은 환급 대상에서 완전 제외
+      const eligibleItems = receipt.items.filter(
+        it => it.category !== 'restaurant' && it.category !== 'transportation' && it.currency !== 'KRW'
+      );
+      if (eligibleItems.length === 0) return;
 
-    const entries = Object.entries(refundByCurrency).filter(([, val]) => val > 0);
+      const receiptCurrency = eligibleItems[0]?.currency || matchedRule.currency;
+      if (receiptCurrency === 'KRW') return;
+
+      // 영수증 건별 대상 결제 금액 합산
+      const receiptEligibleTotal = eligibleItems.reduce((sum, it) => sum + (it.priceLocal || 0), 0);
+
+      // 국가별 최소 기준 금액 조건 충족 여부 확인
+      if (receiptEligibleTotal >= matchedRule.minAmount) {
+        const refundAmount = receiptEligibleTotal * 0.07;
+        refundByCurrency[receiptCurrency] = (refundByCurrency[receiptCurrency] || 0) + refundAmount;
+      }
+    });
+
+    const entries = Object.entries(refundByCurrency).filter(([curr, val]) => curr !== 'KRW' && val > 0);
+    // 2. 기준 금액 미달 (또는 KRW만 있는 경우): 예상환급액 자리에 '0' 표시
     if (entries.length === 0) {
-      const fallbackCurr = matchedRule ? matchedRule.currency : (rList[0]?.items[0]?.currency || 'USD');
-      return { isUnknownOrNonRefundable: false, amountStr: `${fallbackCurr} 0` };
+      return { isUnknownOrNonRefundable: false, amountStr: '0' };
     }
 
-    // 소수점 처리: JPY, KRW, VND 등은 정수 반올림, EUR/USD 등은 소수점 둘째자리
+    // 3. 부분/전체 충족: 영수증과 동일한 화폐약자와 금액으로 표시
     const formatted = entries.map(([curr, val]) => {
-      if (['JPY', 'KRW', 'VND', 'IDR', 'TWD', 'THB'].includes(curr)) {
+      if (['JPY', 'VND', 'IDR', 'TWD', 'THB'].includes(curr)) {
         return `${curr} ${Math.round(val).toLocaleString()}`;
       }
       return `${curr} ${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -424,7 +426,7 @@ export const Screen3List: React.FC = () => {
           구매목록 확인 / 수정
         </h2>
         <button
-          onClick={() => setShowDirectManualModal(true)}
+          onClick={() => setShowAddReceiptChoiceModal(true)}
           className="absolute right-0 p-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs hover:bg-blue-700 active:scale-95 transition-all"
         >
           <Plus className="w-3.5 h-3.5" /> 영수증 추가
@@ -482,25 +484,25 @@ export const Screen3List: React.FC = () => {
               </div>
 
               {/* 우측: 고정 우측 정렬된 예상 환급액 및 안내 문구 */}
-              <div className="text-right flex flex-col items-end min-w-0 pl-1">
+              <div className="text-right flex flex-col items-end min-w-0 pl-1 overflow-hidden">
                 <div className="flex items-center justify-end gap-1 flex-wrap">
                   <span className="text-[11px] sm:text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 shrink-0">
                     <Coins className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> 예상 환급액
                   </span>
-                  {refundStatus.isUnknownOrNonRefundable && (
-                    <span className="text-[9.5px] font-bold text-rose-500 flex items-center gap-0.5 shrink-0">
-                      <AlertCircle className="w-3 h-3" />
-                      사후환급여부 확인 필요
-                    </span>
-                  )}
                 </div>
-                {/* 예상환급액 텍스트보다 금액 표시부가 확실히 더 크게(text-[18px] sm:text-[21px]) 보이도록 명확히 조정 */}
-                <span className={`text-[18px] sm:text-[21px] font-black mt-0.5 truncate max-w-full tracking-tight leading-snug ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
+                {/* 예상환급액 금액 폰트 크기 한 단계 더 확대 및 부모 박스 밖 이탈 방지 */}
+                <span className={`font-black mt-0.5 truncate max-w-full tracking-tight leading-snug ${
+                  refundStatus.amountStr.length > 16
+                    ? 'text-[17px] sm:text-[19px]'
+                    : 'text-[20px] sm:text-[24px]'
+                } ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
                   {refundStatus.amountStr}
                 </span>
-                {/* 금액 아래쪽으로 위치한 안내 문구: 박스 밖으로 삐져나가지 않도록 자동 줄바꿈 */}
+                {/* 금액 바로 아래 회색 안내 문구 영역: 미등록/불명확 국가 시 '사후환급여부 확인 필요'로 대체 */}
                 <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right break-keep">
-                  평균 환급 대행수수료를 차감한 예상 수령액입니다.
+                  {refundStatus.isUnknownOrNonRefundable
+                    ? '사후환급여부 확인 필요'
+                    : '평균 환급 대행수수료를 차감한 예상 수령액입니다.'}
                 </p>
               </div>
             </div>
@@ -876,8 +878,8 @@ export const Screen3List: React.FC = () => {
 
       {/* Modal: Category Product Items Information Popup */}
       {selectedCategoryDetail && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto p-5 shadow-2xl border border-gray-100 dark:border-gray-700">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain p-5 shadow-2xl border border-gray-100 dark:border-gray-700">
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
               <div>
                 <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
@@ -941,8 +943,8 @@ export const Screen3List: React.FC = () => {
 
       {/* Modal: View Receipt Image */}
       {selectedReceipt && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-5 shadow-2xl border border-gray-100 dark:border-gray-700">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto overscroll-contain p-5 shadow-2xl border border-gray-100 dark:border-gray-700">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-extrabold text-sm text-gray-900 dark:text-white">
                 영수증 상세 정보
@@ -984,7 +986,9 @@ export const Screen3List: React.FC = () => {
               </div>
               <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
                 <span className="text-gray-500">총 결제액</span>
-                <span className="font-bold text-blue-600 dark:text-blue-400">${selectedReceipt.totalUSD.toFixed(1)}</span>
+                <span className="font-bold text-blue-600 dark:text-blue-400">
+                  {selectedReceipt.items[0]?.currency || 'USD'} {selectedReceipt.items.reduce((sum, it) => sum + (it.priceLocal || 0), 0).toLocaleString()}
+                </span>
               </div>
             </div>
 
@@ -1049,8 +1053,13 @@ export const Screen3List: React.FC = () => {
 
                 {isAddCatDropdownOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsAddCatDropdownOpen(false)} />
-                    <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsAddCatDropdownOpen(false)}
+                      onTouchMove={(e) => e.preventDefault()}
+                      onWheel={(e) => e.preventDefault()}
+                    />
+                    <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                       {CATEGORY_ORDER.map((cat) => {
                         const isSelected = cat === newItemCategory;
                         return (
@@ -1179,8 +1188,13 @@ export const Screen3List: React.FC = () => {
 
                   {isAddCurrDropdownOpen && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setIsAddCurrDropdownOpen(false)} />
-                      <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsAddCurrDropdownOpen(false)}
+                        onTouchMove={(e) => e.preventDefault()}
+                        onWheel={(e) => e.preventDefault()}
+                      />
+                      <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                         {(['USD', 'JPY', 'KRW', 'EUR', 'CNY'] as const).map((curr) => {
                           const isSelected = curr === newItemCurrency;
                           return (
@@ -1358,8 +1372,13 @@ export const Screen3List: React.FC = () => {
 
                 {isEditCatDropdownOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsEditCatDropdownOpen(false)} />
-                    <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsEditCatDropdownOpen(false)}
+                      onTouchMove={(e) => e.preventDefault()}
+                      onWheel={(e) => e.preventDefault()}
+                    />
+                    <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                       {CATEGORY_ORDER.map((cat) => {
                         const isSelected = cat === editCategory;
                         return (
@@ -1487,8 +1506,13 @@ export const Screen3List: React.FC = () => {
 
                   {isEditCurrDropdownOpen && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setIsEditCurrDropdownOpen(false)} />
-                      <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsEditCurrDropdownOpen(false)}
+                        onTouchMove={(e) => e.preventDefault()}
+                        onWheel={(e) => e.preventDefault()}
+                      />
+                      <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                         {(['USD', 'JPY', 'KRW', 'EUR', 'CNY'] as const).map((curr) => {
                           const isSelected = curr === editCurrency;
                           return (
@@ -1569,7 +1593,77 @@ export const Screen3List: React.FC = () => {
         </div>
       )}
 
-      {/* 영수증 추가 버튼 클릭 시 바로 뜨는 수기 입력 모달 */}
+      {/* 영수증 추가 버튼 클릭 시 촬영 / 수기 등록 선택 옵션 모달 */}
+      {showAddReceiptChoiceModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain"
+          onClick={() => setShowAddReceiptChoiceModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-xs p-5 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 space-y-3"
+          >
+            <div className="flex justify-between items-center pb-1 border-b border-gray-100 dark:border-gray-700">
+              <h3 className="font-extrabold text-sm text-gray-900 dark:text-white">
+                영수증 추가 방식 선택
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddReceiptChoiceModal(false)}
+                className="p-1 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddReceiptChoiceModal(false);
+                  setCurrentScreen(2);
+                }}
+                className="w-full p-3.5 rounded-2xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 border border-blue-200/70 dark:border-blue-800/60 flex items-center gap-3 text-left transition-all active:scale-[0.98]"
+              >
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-extrabold text-blue-900 dark:text-blue-200 block">
+                    영수증 촬영
+                  </span>
+                  <span className="text-[10.5px] text-blue-700/80 dark:text-blue-400 block mt-0.5">
+                    AI 카메라로 영수증 촬영 및 자동 인식
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddReceiptChoiceModal(false);
+                  setShowDirectManualModal(true);
+                }}
+                className="w-full p-3.5 rounded-2xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-700/80 border border-gray-200/80 dark:border-gray-700 flex items-center gap-3 text-left transition-all active:scale-[0.98]"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-extrabold text-gray-900 dark:text-white block">
+                    수기 등록
+                  </span>
+                  <span className="text-[10.5px] text-gray-500 dark:text-gray-400 block mt-0.5">
+                    영수증 사진 없이 품목 직접 입력
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 수기 등록 선택 시 뜨는 수기 입력 모달 */}
       <ManualReceiptModal
         isOpen={showDirectManualModal}
         onClose={() => setShowDirectManualModal(false)}

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { useScrollLock } from '../utils/useScrollLock';
 
 interface CustomDatePickerProps {
   value: string; // YYYY-MM-DD format or '' or placeholder string
@@ -19,6 +20,8 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useScrollLock(isOpen);
 
   // 현재 달력에서 보고 있는 년/월
   const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value) : new Date();
@@ -136,8 +139,13 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
       {/* Calendar Dropdown Modal/Card - 폴더 선택 팝업과 통일된 디자인 */}
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-[100]" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 top-10 z-[101] w-[260px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
+          <div
+            className="fixed inset-0 z-[100]"
+            onClick={() => setIsOpen(false)}
+            onTouchMove={(e) => e.preventDefault()}
+            onWheel={(e) => e.preventDefault()}
+          />
+          <div className="absolute left-0 top-10 z-[101] w-[260px] overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
             {/* Calendar Header */}
             <div className="flex items-center justify-between px-1">
               <button

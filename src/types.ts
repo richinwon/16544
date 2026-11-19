@@ -37,6 +37,7 @@ export interface Receipt {
   items: ProductItem[];
   totalUSD: number;
   createdAt: number;
+  expiresAt?: number; // 촬영/생성일로부터 30일 후 만료 타임스탬프(ms)
 }
 
 export interface ExchangeRates {

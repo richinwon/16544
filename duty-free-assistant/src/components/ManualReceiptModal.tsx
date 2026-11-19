@@ -4,6 +4,7 @@ import type { ProductCategory, ProductItem, Receipt } from '../types';
 import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName } from '../types';
 import { ChevronDown, Check, Plus, Minus, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { CustomDatePicker } from './CustomDatePicker';
+import { useScrollLock } from '../utils/useScrollLock';
 
 interface ManualReceiptModalProps {
   isOpen: boolean;
@@ -38,6 +39,8 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
   
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isCurrencyDropdownOpen, setIsCurrencyDropdownOpen] = useState(false);
+
+  useScrollLock(isOpen || isCategoryDropdownOpen || isCurrencyDropdownOpen);
 
   // 커스텀 상단 슬라이드다운/드롭다운 Toast 알림 상태
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -240,8 +243,10 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
+    <div
+      className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain"
+    >
+      <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto overscroll-contain p-5 sm:p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
         
         {/* 상단 슬라이드다운 커스텀 Toast 알림 컴포넌트 */}
         {toastMessage && (
@@ -350,8 +355,13 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
 
             {isCategoryDropdownOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsCategoryDropdownOpen(false)} />
-                <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsCategoryDropdownOpen(false)}
+                  onTouchMove={(e) => e.preventDefault()}
+                  onWheel={(e) => e.preventDefault()}
+                />
+                <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                   {CATEGORY_ORDER.map((cat) => {
                     const isSelected = cat === manualCategory;
                     return (
@@ -476,8 +486,13 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
 
               {isCurrencyDropdownOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsCurrencyDropdownOpen(false)} />
-                  <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsCurrencyDropdownOpen(false)}
+                    onTouchMove={(e) => e.preventDefault()}
+                    onWheel={(e) => e.preventDefault()}
+                  />
+                  <div className="absolute left-0 right-0 top-16 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                     {(['USD', 'JPY', 'KRW', 'EUR', 'CNY'] as const).map((curr) => {
                       const isSelected = curr === manualCurrency;
                       return (

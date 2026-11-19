@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateDuty } from '../utils/dutyCalculator';
 import { FolderSelect } from './FolderSelect';
+import { useScrollLock } from '../utils/useScrollLock';
 import { 
   ArrowLeft, 
   ShieldAlert, 
@@ -27,6 +28,7 @@ export const Screen4Report: React.FC = () => {
   const reportRef = useRef<HTMLDivElement>(null);
 
   const [showDetailModal, setShowDetailModal] = useState(false);
+  useScrollLock(showDetailModal);
 
   // 외화 금액 포맷팅 헬퍼 (세 자리 콤마 및 소수 둘째 자리까지 표시)
   const formatUSD = (val: number): string => {
@@ -458,8 +460,8 @@ export const Screen4Report: React.FC = () => {
 
       {/* Modal: 산출내역세부 팝업 (세목별 분류 및 상세 계산식 모달) */}
       {showDetailModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-5 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto overscroll-contain p-5 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95">
             <div className="flex justify-between items-center mb-3">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-blue-600" />

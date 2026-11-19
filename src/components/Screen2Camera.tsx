@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import type { Receipt } from '../types';
 import { generateFolderName } from '../types';
 import { recognizeReceipt, compressReceiptThumbnail } from '../utils/ocrService';
+import { useScrollLock } from '../utils/useScrollLock';
 import { 
   Camera, 
   Upload, 
@@ -12,10 +13,7 @@ import {
   ArrowLeft,
   Layers,
   MapPin,
-  X,
-  CreditCard,
-  Crown,
-  Check
+  X
 } from 'lucide-react';
 import { ManualReceiptModal } from './ManualReceiptModal';
 import { CustomDatePicker } from './CustomDatePicker';
@@ -29,11 +27,7 @@ export const Screen2Camera: React.FC = () => {
     tripCountry: manualCountry,
     setTripCountry: setManualCountry,
     tripCity: manualCity,
-    setTripCity: setManualCity,
-    freeCaptureCount,
-    isSubscribed,
-    incrementCaptureCount,
-    setSubscription
+    setTripCity: setManualCity
   } = useApp();
   
   const [isContinuousMode, setIsContinuousMode] = useState(false);
@@ -46,13 +40,14 @@ export const Screen2Camera: React.FC = () => {
 
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
 
   // 실시간 카메라 뷰파인더 연사 스트림 모달 상태
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  useScrollLock(showRetryModal || showManualModal || isCameraOpen);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -78,15 +73,6 @@ export const Screen2Camera: React.FC = () => {
     setCapturedImages([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
-  };
-
-  // 무료 5회 소진 여부 및 구독 상태 검증
-  const checkSubscriptionOrAlert = (): boolean => {
-    if (!isSubscribed && freeCaptureCount >= 5) {
-      setShowSubscriptionModal(true);
-      return false;
-    }
-    return true;
   };
 
   // 카메라 스트림 시작/종료 제어
@@ -148,7 +134,6 @@ export const Screen2Camera: React.FC = () => {
 
   const handleCameraClick = () => {
     if (!validateFolderOrAlert()) return;
-    if (!checkSubscriptionOrAlert()) return;
 
     if (isContinuousMode) {
       startCamera();
@@ -159,7 +144,6 @@ export const Screen2Camera: React.FC = () => {
 
   const handleFileClick = () => {
     if (!validateFolderOrAlert()) return;
-    if (!checkSubscriptionOrAlert()) return;
 
     fileInputRef.current?.click();
   };
@@ -168,7 +152,7 @@ export const Screen2Camera: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    if (!validateFolderOrAlert() || !checkSubscriptionOrAlert()) {
+    if (!validateFolderOrAlert()) {
       e.target.value = '';
       return;
     }
@@ -201,7 +185,6 @@ export const Screen2Camera: React.FC = () => {
     if (isAnalyzing) return;
     if (capturedImages.length === 0) return;
     if (!validateFolderOrAlert()) return;
-    if (!checkSubscriptionOrAlert()) return;
 
     try {
       setIsAnalyzing(true);
@@ -264,7 +247,6 @@ export const Screen2Camera: React.FC = () => {
       // 모든 영수증 검증 통과 시에만 실제 저장 수행
       validReceipts.forEach((r) => {
         addReceipt(r);
-        incrementCaptureCount();
       });
 
       setOcrProgress(100);
@@ -315,49 +297,15 @@ export const Screen2Camera: React.FC = () => {
         </h2>
       </div>
 
-      {/* Subscription / Free Usage Badge Bar */}
-      <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xs">
-        <div className="flex items-center gap-1.5">
-          {isSubscribed ? (
-            <Crown className="w-4 h-4 text-amber-500" />
-          ) : (
-            <Sparkles className="w-4 h-4 text-blue-500" />
-          )}
-          <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-            {isSubscribed ? 'PRO 무제한 멤버십' : '무료 체험 이용'}
-          </span>
-        </div>
-        {isSubscribed ? (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/50">
-            무제한 이용 중
-          </span>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-gray-500 dark:text-gray-400">
-              무료 횟수: <strong className="text-blue-600 dark:text-blue-400 font-bold">{Math.max(0, 5 - freeCaptureCount)}</strong> / 5회
-            </span>
-            <button
-              onClick={() => setShowSubscriptionModal(true)}
-              className="px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-[10px] font-bold transition-colors"
-            >
-              구독하기
-            </button>
-          </div>
-        )}
-      </div>
-
       {/* Travel Trip Folder Info Banner - 수동 폴더 생성 및 기본 placeholder 적용 */}
       <div className="p-3.5 sm:p-4 rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xs space-y-2.5">
-        <div className="flex items-start justify-between gap-1">
-          {/* 좌측 텍스트: 괄호 문구 줄바꿈 및 좌측 정렬 */}
-          <div className="flex items-start gap-1.5 min-w-0">
-            <MapPin className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+        <div className="flex items-center justify-between gap-1">
+          {/* 좌측 텍스트 */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
             <div className="text-left leading-tight">
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block">
                 여행일정 및 방문지 설정
-              </span>
-              <span className="text-[10px] text-gray-400 font-medium block mt-0.5">
-                (수동 폴더 생성)
               </span>
             </div>
           </div>
@@ -565,7 +513,7 @@ export const Screen2Camera: React.FC = () => {
           type="button"
           className="w-full py-3 rounded-2xl border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold text-xs transition-colors"
         >
-          영수증 사진 없이 수기로 직접 입력하기 (무료)
+          영수증 사진 없이 수기로 직접 입력하기
         </button>
       </div>
 
@@ -711,77 +659,6 @@ export const Screen2Camera: React.FC = () => {
           setCurrentScreen(3);
         }}
       />
-
-      {/* Modal 3: 월 500원 구독 안내 모달 */}
-      {showSubscriptionModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 space-y-4">
-            <div className="w-16 h-16 rounded-3xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-md">
-              <Crown className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-1.5">
-              <h3 className="text-base font-extrabold text-gray-900 dark:text-white leading-snug">
-                무료 촬영 횟수(5회)를 모두 소진했습니다.
-                <br />
-                <span className="text-blue-600 dark:text-blue-400">월 500원으로 무제한 이용해보세요!</span>
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                다국어 AI 영수증 OCR 무제한 분석과 자동 면세 계산 혜택을 부담 없는 가격으로 누려보세요.
-              </p>
-            </div>
-
-            {/* Price Card */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border border-blue-200 dark:border-blue-800 text-left space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">면세비서 PRO 정기구독</span>
-                <span className="text-base font-black text-blue-600 dark:text-blue-400">월 500원</span>
-              </div>
-              <ul className="text-[11px] text-gray-600 dark:text-gray-400 space-y-1">
-                <li className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  영수증 AI 촬영 & 연사 다중 업로드 무제한
-                </li>
-                <li className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  엔화/달러/유로 등 다국어 자동 통화 환산
-                </li>
-                <li className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  언제든지 1초 만에 해지 가능
-                </li>
-              </ul>
-            </div>
-
-            <p className="text-[10px] text-gray-400 dark:text-gray-500">
-              * 영수증 수기 직접 입력, 구매목록, 엑셀 다운로드, 환율 계산 기능은 영구 무료로 계속 이용하실 수 있습니다.
-            </p>
-
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setSubscription(true);
-                  alert('🎉 월 500원 무제한 구독이 성공적으로 시작되었습니다!\n영수증을 마음껏 촬영하고 등록해 보세요.');
-                  setShowSubscriptionModal(false);
-                }}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-              >
-                <CreditCard className="w-4 h-4" />
-                월 500원 구독 시작하기
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowSubscriptionModal(false)}
-                className="w-full py-2.5 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-semibold"
-              >
-                다음에 하기 (닫기)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShieldCheck, Plane, CheckCircle2, AlertCircle, KeyRound, Lock, Eye, EyeOff, HelpCircle, RotateCcw, X } from 'lucide-react';
 import { getFirebaseUserCredential, saveFirebaseUserCredential, deleteFirebaseUserAccount } from '../services/firebaseService';
+import { useScrollLock } from '../utils/useScrollLock';
 
 interface SecurityQA {
   findQuestion: string;
@@ -30,6 +31,7 @@ export const Screen0Register: React.FC = () => {
 
   // 비밀번호 찾기 / 비밀번호 초기화 모달
   const [showFindModal, setShowFindModal] = useState(false);
+  useScrollLock(showFindModal);
   const [recoveryTab, setRecoveryTab] = useState<'find' | 'reset'>('find');
   const [findId, setFindId] = useState('');
   const [inputFindQuestion, setInputFindQuestion] = useState('');

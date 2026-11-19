@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { CURRENCY_INFO } from '../types';
+import { useScrollLock } from '../utils/useScrollLock';
 import { 
   ArrowLeft, 
   Coins, 
@@ -17,6 +18,8 @@ export const Screen6Calculator: React.FC = () => {
   const [displayAmount, setDisplayAmount] = useState('100.00');
   const [baseCurrency, setBaseCurrency] = useState('USD');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  useScrollLock(isDropdownOpen);
   
   // 환율 수동 조정 입력값 (3자리 콤마 포맷팅 관리)
   const [manualRateInput, setManualRateInput] = useState(() => (exchangeRates.KRW || 1380).toLocaleString());
@@ -157,8 +160,10 @@ export const Screen6Calculator: React.FC = () => {
                   <div 
                     className="fixed inset-0 z-40" 
                     onClick={() => setIsDropdownOpen(false)}
+                    onTouchMove={(e) => e.preventDefault()}
+                    onWheel={(e) => e.preventDefault()}
                   />
-                  <div className="absolute left-0 right-0 top-14 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                  <div className="absolute left-0 right-0 top-14 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                     {Object.entries(CURRENCY_INFO).map(([code, info]) => {
                       const isSelected = code === baseCurrency;
                       return (

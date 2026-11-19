@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { calculateDuty } from '../utils/dutyCalculator';
 import { FolderSelect } from './FolderSelect';
 import { CircularProgress } from './CircularProgress';
+import { useScrollLock } from '../utils/useScrollLock';
 import { 
   Camera, 
   FileText, 
@@ -39,6 +40,8 @@ export const Screen1Dashboard: React.FC = () => {
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [showColorModal, setShowColorModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
+
+  useScrollLock(showCurrencyModal || showColorModal || showGuideModal);
 
   // Calculate duty based on selectedFolder's receipts
   const allItems = filteredReceipts.flatMap(r => r.items);
@@ -417,8 +420,8 @@ export const Screen1Dashboard: React.FC = () => {
 
       {/* Modal 3: 면세비서 100% 활용방법 안내 모달 */}
       {showGuideModal && (
-        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto p-6 shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain p-6 shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 flex items-center justify-center">
@@ -520,6 +523,7 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const [displayAmount, setDisplayAmount] = useState<string>('100.00');
   const [baseCurrency, setBaseCurrency] = useState<string>('USD');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  useScrollLock(isDropdownOpen);
   const [manualRateInput, setManualRateInput] = useState(() => (exchangeRates.KRW || 1380).toLocaleString());
   const [isResettingRate, setIsResettingRate] = useState(false);
   const [resetFeedbackMsg, setResetFeedbackMsg] = useState('');
@@ -659,8 +663,10 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                     <div 
                       className="fixed inset-0 z-40" 
                       onClick={() => setIsDropdownOpen(false)}
+                      onTouchMove={(e) => e.preventDefault()}
+                      onWheel={(e) => e.preventDefault()}
                     />
-                    <div className="absolute left-0 right-0 top-12 z-50 w-full max-h-[195px] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                    <div className="absolute left-0 right-0 top-12 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                       {Object.entries(CURRENCY_INFO).map(([code, info]) => {
                         const isSelected = code === baseCurrency;
                         return (

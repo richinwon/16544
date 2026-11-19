@@ -6,7 +6,9 @@ import {
   deleteFirebaseReceipt, 
   getFirebaseUserCredential, 
   updateFirebaseSubscription,
-  deleteFirebaseUserAccount
+  deleteFirebaseUserAccount,
+  isReceiptExpired,
+  RECEIPT_RETENTION_MS
 } from '../services/firebaseService';
 import { isFirebaseConfigured } from '../firebase';
 import { generateFolderName } from '../types';
@@ -116,8 +118,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const now = Date.now();
+        // 촬영일로부터 30일이 경과한 영수증은 자동 필터링(삭제)
+        const activeList = (Array.isArray(parsed) ? parsed : []).filter(
+          (r: any) => !isReceiptExpired(r, now)
+        );
         // Ensure every receipt has a folderName
-        return parsed.map((r: any) => ({
+        return activeList.map((r: any) => ({
           ...r,
           folderName: r.folderName || generateFolderName(r.date, r.country || '일본', r.city || '도쿄')
         }));
@@ -255,22 +262,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Firebase 연결 시 유저 변경 시 Firestore에서 영수증 및 구독/카운트 로드
   useEffect(() => {
     if (username && isFirebaseConfigured) {
-      // 1. 영수증 로드 (로컬에 방금 저장된 영수증이 누락되지 않도록 병합)
+      // 1. 영수증 로드 (로컬에 방금 저장된 영수증이 누락되지 않도록 병합 및 30일 경과 영수증 자동 삭제)
       loadFirebaseReceipts(username).then((remoteReceipts: Receipt[]) => {
+        const now = Date.now();
         if (remoteReceipts && remoteReceipts.length > 0) {
           setReceipts(prev => {
             const remoteIds = new Set(remoteReceipts.map(r => r.id));
-            const unsyncedLocal = prev.filter(r => !remoteIds.has(r.id) && r.id !== 'sample-receipt-1');
-            unsyncedLocal.forEach(r => saveFirebaseReceipt(username, r));
-            const merged = [...unsyncedLocal, ...remoteReceipts].sort(
-              (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+            const unsyncedLocal = prev.filter(
+              r => !remoteIds.has(r.id) && r.id !== 'sample-receipt-1' && !isReceiptExpired(r, now)
             );
+            unsyncedLocal.forEach(r => saveFirebaseReceipt(username, r));
+            const merged = [...unsyncedLocal, ...remoteReceipts]
+              .filter(r => !isReceiptExpired(r, now))
+              .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
             persistReceiptsSafely(merged);
             return merged;
           });
         } else if (receipts.length > 0) {
-          // 로컬 영수증이 있으면 첫 Firebase 업로드 동기화
-          receipts.forEach(r => saveFirebaseReceipt(username, r));
+          // 로컬 영수증이 있으면 만료되지 않은 항목만 Firebase 업로드 동기화
+          receipts
+            .filter(r => !isReceiptExpired(r, now))
+            .forEach(r => saveFirebaseReceipt(username, r));
         }
       });
 
@@ -364,17 +376,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addReceipt = (receipt: Receipt) => {
+    const createdAt = receipt.createdAt || Date.now();
+    const receiptWithExpiry: Receipt = {
+      ...receipt,
+      createdAt,
+      expiresAt: receipt.expiresAt || (createdAt + RECEIPT_RETENTION_MS),
+    };
     setReceipts(prev => {
-      const updated = [receipt, ...prev];
+      const updated = [receiptWithExpiry, ...prev];
       persistReceiptsSafely(updated);
       return updated;
     });
     // Automatically select the new receipt's folder
-    if (receipt.folderName) {
-      setSelectedFolder(receipt.folderName);
+    if (receiptWithExpiry.folderName) {
+      setSelectedFolder(receiptWithExpiry.folderName);
     }
     if (username && isFirebaseConfigured) {
-      saveFirebaseReceipt(username, receipt);
+      saveFirebaseReceipt(username, receiptWithExpiry);
     }
   };
 
