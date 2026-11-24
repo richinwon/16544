@@ -376,11 +376,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addReceipt = (receipt: Receipt) => {
-    const createdAt = receipt.createdAt || Date.now();
+    const createdAt = (typeof receipt.createdAt === 'number' && receipt.createdAt > 0) ? receipt.createdAt : Date.now();
     const receiptWithExpiry: Receipt = {
       ...receipt,
       createdAt,
-      expiresAt: receipt.expiresAt || (createdAt + RECEIPT_RETENTION_MS),
+      expiresAt: createdAt + RECEIPT_RETENTION_MS,
     };
     setReceipts(prev => {
       const updated = [receiptWithExpiry, ...prev];

@@ -33,6 +33,8 @@ export interface GeminiReceiptResponseSchema {
 const VALID_CATEGORIES: ProductCategory[] = [
   'cosmetics_general',
   'clothing_shoes',
+  'jewelry',
+  'luxury_watch_bag',
   'fur',
   'bags',
   'deer_antler',
@@ -189,8 +191,14 @@ function resolveCategory(rawCategory: string | null | undefined, itemName: strin
   if (/담배|시가|전자담배|연초|cigar|tobacco|cigarette|iqos|heets/i.test(lowerName)) {
     return 'tobacco';
   }
+  if (/귀금속|보석|다이아|반지|목걸이|팔찌|귀걸이|금반지|jewelry|diamond|necklace|ring|bracelet/i.test(lowerName)) {
+    return 'jewelry';
+  }
+  if (/롤렉스|오메가|까르띠에|고급시계|명품시계|rolex|omega|cartier|patek/i.test(lowerName)) {
+    return 'luxury_watch_bag';
+  }
   if (/가방|핸드백|백팩|지갑|클러치|숄더백|토트백|bag|wallet|handbag|backpack|pouch/i.test(lowerName)) {
-    return 'bags';
+    return 'cosmetics_general';
   }
   if (/옷|의류|셔츠|바지|자켓|코트|패딩|니트|원피스|티셔츠|신발|운동화|구두|스니커즈|모자|양말|shoes|clothing|shirt|pants|jacket|sneakers/i.test(lowerName)) {
     return 'clothing_shoes';

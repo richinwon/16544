@@ -112,9 +112,9 @@ export const Screen6Calculator: React.FC = () => {
   const krwAmount = Math.round(usdAmount * krwRate);
 
   return (
-    <div className="p-4 space-y-4 pb-24">
+    <div className="p-2.5 sm:p-3 space-y-3 pb-24">
       {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-2">
+      <div className="relative flex items-center justify-center pt-1.5">
         <button
           onClick={() => setCurrentScreen(1)}
           className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
@@ -128,7 +128,7 @@ export const Screen6Calculator: React.FC = () => {
       </div>
 
       {/* Main Calculator Card */}
-      <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+      <div className="bg-white dark:bg-gray-800 rounded-3xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 space-y-3.5">
         <div>
           <label className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5 block">
             금액 및 기준 통화 선택
@@ -163,7 +163,7 @@ export const Screen6Calculator: React.FC = () => {
                     onTouchMove={(e) => e.preventDefault()}
                     onWheel={(e) => e.preventDefault()}
                   />
-                  <div className="absolute left-0 right-0 top-14 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                  <div className="absolute left-0 right-0 top-14 z-50 w-full max-h-[210px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-0.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                     {Object.entries(CURRENCY_INFO).map(([code, info]) => {
                       const isSelected = code === baseCurrency;
                       return (
@@ -174,22 +174,22 @@ export const Screen6Calculator: React.FC = () => {
                             setBaseCurrency(code);
                             setIsDropdownOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-2 py-2 rounded-xl text-xs font-semibold transition-all ${
+                          className={`w-full flex items-center justify-between px-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
                             isSelected
                               ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 font-bold'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60'
                           }`}
                         >
-                          <div className="flex items-center min-w-0">
-                            <span className="w-4 text-center font-bold text-gray-400 dark:text-gray-500 text-[10px] flex-shrink-0 mr-2">
+                          <div className="flex items-center min-w-0 whitespace-nowrap overflow-hidden">
+                            <span className="inline-block min-w-[26px] text-left font-bold text-gray-400 dark:text-gray-500 text-[10.5px] shrink-0 whitespace-nowrap mr-1">
                               {info.symbol}
                             </span>
-                            <span className="font-bold text-xs mr-1.5">{code}</span>
-                            <span className="text-[10px] text-gray-400 font-normal truncate">
+                            <span className="font-bold text-xs mr-1 shrink-0 whitespace-nowrap">{code}</span>
+                            <span className="text-[10.5px] text-gray-400 font-normal truncate">
                               {info.name}
                             </span>
                           </div>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-1" />}
+                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-0.5" />}
                         </button>
                       );
                     })}

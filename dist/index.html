@@ -11,12 +11,23 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="면세비서" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="manifest" href="/manifest.json" />
     <meta name="format-detection" content="telephone=no" />
     <title>면세비서 - 해외여행 AI 면세 계산 & 실시간 세금 예측 서비스</title>
-    <script type="module" crossorigin src="/assets/index-Ck80oQqO.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-fwK4EgBe.css">
+    <script type="module" crossorigin src="/assets/index-CKo41CS0.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CVW4x_Rx.css">
   </head>
   <body class="bg-slate-100 dark:bg-slate-950 font-sans">
-    <div id="root"></div>
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>

@@ -92,9 +92,9 @@ export const Screen1Dashboard: React.FC = () => {
   const currentPreset = colorPresets.find(p => p.id === summaryBgColor) || colorPresets[0];
 
   return (
-    <div className="p-4 space-y-4 pb-20">
+    <div className="p-2.5 sm:p-3 space-y-3 pb-20">
       {/* Top Header: 홈 화면 좌측 상단 "반가워요~" 텍스트 표시 + 우측 로그아웃 버튼 유지 */}
-      <div className="pt-2 space-y-2">
+      <div className="pt-1.5 space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 text-left">
             반가워요, <span className="text-blue-600 dark:text-blue-400">{username}</span>님! ✈️
@@ -111,7 +111,7 @@ export const Screen1Dashboard: React.FC = () => {
         {/* '면세비서 100% 활용하기' 배너 - 반가워요 문구 바로 아래 */}
         <button
           onClick={() => setShowGuideModal(true)}
-          className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-200/60 dark:border-blue-900/60 hover:border-blue-400 transition-all text-left group"
+          className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-200/60 dark:border-blue-900/60 hover:border-blue-400 transition-all text-left group"
         >
           <div className="flex items-center gap-2">
             <span className="text-xs">💡</span>
@@ -125,7 +125,7 @@ export const Screen1Dashboard: React.FC = () => {
 
       {/* Main Status Summary Card with Circular Progress and Settings Button */}
       <div 
-        className={`relative overflow-hidden rounded-3xl ${currentPreset.className} text-white p-5 shadow-xl shadow-indigo-950/20 transition-colors duration-300`}
+        className={`relative overflow-hidden rounded-3xl ${currentPreset.className} text-white p-3.5 sm:p-4 shadow-xl shadow-indigo-950/20 transition-colors duration-300`}
       >
         {/* Top bar inside box: 좌측 폴더선택 박스는 왼쪽으로, 우측 초과금액/톱니바퀴는 오른쪽 끝으로 여백 내 배치 */}
         <div className="flex justify-between items-center mb-3 -mx-1">
@@ -135,14 +135,16 @@ export const Screen1Dashboard: React.FC = () => {
 
           <div className="flex items-center gap-1.5 shrink-0 pl-1">
             <div className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 whitespace-nowrap shrink-0 ${
-              duty.isOverLimit 
+              duty.hasAnyTaxableExceed 
                 ? 'bg-rose-500/25 text-rose-300 border border-rose-400/40' 
                 : 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
             }`}>
-              {duty.isOverLimit ? <ShieldAlert className="w-3 h-3 shrink-0" /> : <ShieldCheck className="w-3 h-3 shrink-0" />}
+              {duty.hasAnyTaxableExceed ? <ShieldAlert className="w-3 h-3 shrink-0" /> : <ShieldCheck className="w-3 h-3 shrink-0" />}
               <span className="whitespace-nowrap">
                 {duty.isOverLimit 
-                  ? `$${duty.taxableUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 초과` 
+                  ? `$${duty.generalTaxableUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 초과` 
+                  : duty.hasAnyTaxableExceed
+                  ? '별도한도 초과'
                   : '한도 내 안전'}
               </span>
             </div>
@@ -207,20 +209,20 @@ export const Screen1Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Separate Limits quick badges - 괄호 기준 줄바꿈 및 우측 박스 동일 크기(w-16) 정돈 */}
-        <div className="mt-3.5 pt-2.5 border-t border-white/10 flex items-center justify-between text-xs">
-          <div className="text-left leading-tight text-blue-200">
-            <span className="text-[11px] block font-bold">별도 한도</span>
-            <span className="text-[10px] text-blue-300/80 block mt-0.5">(주류·담배·향수)</span>
+        {/* Separate Limits quick badges - 괄호 기준 줄바꿈 및 우측 박스 동일 크기 정돈 */}
+        <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-xs">
+          <div className="text-left leading-tight text-blue-200 shrink-0">
+            <span className="text-xs block font-bold">별도 한도</span>
+            <span className="text-[11px] text-blue-300/80 block mt-0.5">(주류·담배·향수)</span>
           </div>
-          <div className="flex gap-1.5 font-medium text-[11px]">
-            <span className={`w-16 py-1 rounded-md text-center shrink-0 truncate ${duty.liquor.isOver ? 'bg-rose-500/30 text-rose-300' : 'bg-white/10 text-white'}`}>
+          <div className="flex gap-1 font-semibold text-[11.5px]">
+            <span className={`px-2 py-1 rounded-md text-center shrink-0 whitespace-nowrap ${duty.liquor.isOver ? 'bg-rose-500/30 text-rose-300' : 'bg-white/10 text-white'}`}>
               주류 {duty.liquor.totalBottles}병
             </span>
-            <span className={`w-16 py-1 rounded-md text-center shrink-0 truncate ${duty.tobacco.isOver ? 'bg-rose-500/30 text-rose-300' : 'bg-white/10 text-white'}`}>
+            <span className={`px-2 py-1 rounded-md text-center shrink-0 whitespace-nowrap ${duty.tobacco.isOver ? 'bg-rose-500/30 text-rose-300' : 'bg-white/10 text-white'}`}>
               담배 {duty.tobacco.cartons}보루
             </span>
-            <span className={`w-16 py-1 rounded-md text-center shrink-0 truncate ${duty.perfume.isOver ? 'bg-rose-500/30 text-rose-300' : 'bg-white/10 text-white'}`}>
+            <span className={`px-2 py-1 rounded-md text-center shrink-0 whitespace-nowrap ${duty.perfume.isOver ? 'bg-rose-500/30 text-rose-300' : 'bg-white/10 text-white'}`}>
               향수 {duty.perfume.totalMl}ml
             </span>
           </div>
@@ -311,7 +313,7 @@ export const Screen1Dashboard: React.FC = () => {
       </div>
 
       {/* Quick Recent Receipts List in Selected Folder */}
-      <div className="bg-white dark:bg-gray-800 rounded-3xl p-4 shadow-xs border border-gray-100 dark:border-gray-700">
+      <div className="bg-white dark:bg-gray-800 rounded-3xl p-3.5 shadow-xs border border-gray-100 dark:border-gray-700">
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center gap-2">
             <ReceiptIcon className="w-4 h-4 text-gray-500" />
@@ -421,7 +423,11 @@ export const Screen1Dashboard: React.FC = () => {
       {/* Modal 3: 면세비서 100% 활용방법 안내 모달 */}
       {showGuideModal && (
         <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain p-6 shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+            <div
+              className="w-full max-h-[85vh] overflow-y-auto overscroll-contain p-6 modal-scroll touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
             <div className="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 flex items-center justify-center">
@@ -487,6 +493,7 @@ export const Screen1Dashboard: React.FC = () => {
             >
               확인 완료
             </button>
+            </div>
           </div>
         </div>
       )}
@@ -666,7 +673,7 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                       onTouchMove={(e) => e.preventDefault()}
                       onWheel={(e) => e.preventDefault()}
                     />
-                    <div className="absolute left-0 right-0 top-12 z-50 w-full max-h-[195px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
+                    <div className="absolute left-0 right-0 top-12 z-50 w-full max-h-[210px] overflow-y-auto overscroll-contain bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-0.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin">
                       {Object.entries(CURRENCY_INFO).map(([code, info]) => {
                         const isSelected = code === baseCurrency;
                         return (
@@ -677,22 +684,22 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                               setBaseCurrency(code);
                               setIsDropdownOpen(false);
                             }}
-                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                            className={`w-full flex items-center justify-between px-1.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                               isSelected
                                 ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 font-bold'
                                 : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60'
                             }`}
                           >
-                            <div className="flex items-center min-w-0">
-                              <span className="w-4 text-center font-bold text-gray-400 dark:text-gray-500 text-[10px] flex-shrink-0 mr-2">
+                            <div className="flex items-center min-w-0 whitespace-nowrap overflow-hidden">
+                              <span className="inline-block min-w-[26px] text-left font-bold text-gray-400 dark:text-gray-500 text-[10.5px] shrink-0 whitespace-nowrap mr-1">
                                 {info.symbol}
                               </span>
-                              <span className="font-bold text-xs mr-1.5">{code}</span>
-                              <span className="text-[10px] text-gray-400 font-normal truncate">
+                              <span className="font-bold text-xs mr-1 shrink-0 whitespace-nowrap">{code}</span>
+                              <span className="text-[10.5px] text-gray-400 font-normal truncate">
                                 {info.name}
                               </span>
                             </div>
-                            {isSelected && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-1" />}
+                            {isSelected && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-0.5" />}
                           </button>
                         );
                       })}

@@ -100,22 +100,22 @@ export async function updateFirebaseSubscription(
   }
 }
 
-// 영수증 저장 기간: 촬영일(createdAt)로부터 30일 (30일 경과 시 자동 삭제)
+// 영수증 저장 기간: 최초 저장일(생성일, createdAt)로부터 30일 보관 (30일 경과 시 자동 삭제)
 export const RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function isReceiptExpired(receipt: Receipt, now: number = Date.now()): boolean {
   if (!receipt) return false;
   if (receipt.id === 'sample-receipt-1') return false;
-  if (typeof receipt.expiresAt === 'number') {
-    return now > receipt.expiresAt;
-  }
   if (typeof receipt.createdAt === 'number' && receipt.createdAt > 0) {
     return now - receipt.createdAt > RECEIPT_RETENTION_MS;
+  }
+  if (typeof receipt.expiresAt === 'number') {
+    return now > receipt.expiresAt;
   }
   return false;
 }
 
-// 3. 유저의 전체 영수증 목록 로드 (촬영일로부터 30일 경과한 만료 데이터 자동 삭제)
+// 3. 유저의 전체 영수증 목록 로드 (최초 저장일로부터 30일 경과한 만료 데이터 자동 삭제)
 export async function loadFirebaseReceipts(username: string): Promise<Receipt[]> {
   if (!isFirebaseConfigured || !db || !username) return [];
   try {
@@ -157,13 +157,13 @@ export async function saveFirebaseReceipt(username: string, receipt: Receipt): P
       return false;
     }
     const receiptDocRef = doc(db, 'users', username, 'receipts', receipt.id);
-    const createdAt = receipt.createdAt || Date.now();
-    const expiresAt = receipt.expiresAt || (createdAt + RECEIPT_RETENTION_MS);
+    const createdAt = (typeof receipt.createdAt === 'number' && receipt.createdAt > 0) ? receipt.createdAt : Date.now();
+    const expiresAt = createdAt + RECEIPT_RETENTION_MS;
     const sanitized = JSON.parse(JSON.stringify({
       ...receipt,
       createdAt,
       expiresAt,
-      expireAt: new Date(expiresAt).toISOString(), // Firestore TTL 정책 호환용
+      expireAt: new Date(expiresAt).toISOString(), // Firestore TTL 정책 호환용 (최초 저장일 기준 30일)
     }));
     if (sanitized.imageUrl && sanitized.imageUrl.length > 700000) {
       delete sanitized.imageUrl;

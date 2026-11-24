@@ -26,8 +26,8 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
   } = useApp();
 
   const [manualDate, setManualDate] = useState(tripDate || new Date().toISOString().split('T')[0]);
-  const [manualCountry, setManualCountry] = useState(tripCountry || '일본');
-  const [manualCity, setManualCity] = useState(tripCity || '도쿄');
+  const [manualCountry, setManualCountry] = useState(tripCountry || '');
+  const [manualCity, setManualCity] = useState(tripCity || '');
   const [manualStore, setManualStore] = useState('');
   const [manualItemName, setManualItemName] = useState('');
   const [manualCategory, setManualCategory] = useState<ProductCategory>('cosmetics_general');
@@ -59,12 +59,16 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // 카테고리 변경 시 향수 기본값(50ml) 및 기본 수량(1) 초기화
+  // 카테고리 변경 시 향수 기본값(50ml), 주류 기본값(750ml) 및 기본 수량(1) 초기화
   const handleCategorySelect = (cat: ProductCategory) => {
     setManualCategory(cat);
     setIsCategoryDropdownOpen(false);
     if (cat === 'perfume') {
       setManualPerfumeMl(50);
+      setManualQuantity(1);
+    } else if (cat === 'liquor') {
+      setManualPerfumeMl(750);
+      setManualQuantity(1);
     }
   };
 
@@ -97,11 +101,11 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
         }
       }
 
-      const finalCountry = initialCountry || '일본';
-      const finalCity = initialCity || '도쿄';
+      const finalCountry = initialCountry || '';
+      const finalCity = initialCity || '';
       const finalDate = initialDate || new Date().toISOString().split('T')[0];
 
-      setManualCountry(finalCountry);
+      setManualCountry('');
       setManualCity(finalCity);
       setManualDate(finalDate);
 
@@ -161,14 +165,13 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
       showToast('품목명을 입력해 주세요!');
       return;
     }
-    if (isPerfume) {
+    if (!manualQuantity || manualQuantity < 1) {
+      showToast('수량을 1 이상 입력해 주세요!');
+      return;
+    }
+    if (isPerfume || isLiquor) {
       if (!manualPerfumeMl || manualPerfumeMl <= 0) {
-        showToast('향수 용량(ml)을 올바르게 입력해 주세요!');
-        return;
-      }
-    } else {
-      if (!manualQuantity || manualQuantity < 1) {
-        showToast('수량을 1개 이상 입력해 주세요!');
+        showToast('용량(ml)을 올바르게 입력해 주세요!');
         return;
       }
     }
@@ -191,8 +194,9 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
     setTripCity('');
 
     const finalFolder = targetFolder;
-    const q = isPerfume ? 1 : Math.max(1, Math.floor(manualQuantity || 1));
+    const q = Math.max(1, Math.floor(manualQuantity || 1));
     const perfumeVal = isPerfume ? (manualPerfumeMl || 50) : undefined;
+    const liquorMlVal = isLiquor ? (manualPerfumeMl || 750) : undefined;
 
     const newItem: ProductItem = {
       id: 'manual-item-' + Date.now(),
@@ -204,6 +208,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
       quantity: q,
       taxLocal: tax,
       liquorBottles: isLiquor ? q : undefined,
+      liquorMl: liquorMlVal,
       tobaccoPacks: isTobacco ? (q * 10) : undefined,
       perfumeMl: perfumeVal,
     };
@@ -246,7 +251,11 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
     <div
       className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain"
     >
-      <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto overscroll-contain p-5 sm:p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
+      <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative flex flex-col">
+        <div
+          className="w-full max-h-[90vh] overflow-y-auto overscroll-contain p-5 sm:p-6 modal-scroll touch-pan-y"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
         
         {/* 상단 슬라이드다운 커스텀 Toast 알림 컴포넌트 */}
         {toastMessage && (
@@ -295,8 +304,8 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
                 type="text"
                 value={manualCountry}
                 onChange={(e) => setManualCountry(e.target.value)}
-                placeholder="예: 일본"
-                className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="정확히입력"
+                className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder:text-rose-500 dark:placeholder:text-rose-400 placeholder:font-bold focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
             <div>
@@ -307,7 +316,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
                 type="text"
                 value={manualCity}
                 onChange={(e) => setManualCity(e.target.value)}
-                placeholder="예: 도쿄"
+                placeholder="입력"
                 className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
@@ -385,59 +394,69 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             )}
           </div>
 
-          {/* 5. 품목명(60%) : 수량/용량(40%) 6:4 가로 비율 배치 */}
-          <div className="flex gap-2 items-start">
-            <div className="w-[60%]">
+          {/* 5. 품목명 + 수량(병/보루/개) + (주류/향수 전용) 용량(ml) 배치 */}
+          <div className="flex gap-1.5 items-start">
+            <div className="flex-1 min-w-0">
               <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                 품목명 *
               </label>
               <input
                 type="text"
-                placeholder={isPerfume ? "예: 샤넬 넘버5" : "예: 나이키 운동화"}
+                placeholder={isPerfume ? "예: 샤넬 넘버5" : isLiquor ? "예: 발렌타인" : "예: 나이키 운동화"}
                 value={manualItemName}
                 onChange={(e) => setManualItemName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-2.5 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
 
-            <div className="w-[40%]">
-              <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
-                {isPerfume ? '용량 *' : '수량 *'}
-              </label>
-
-              {isPerfume ? (
-                /* 향수: 단위 ml, 기본값 50, Step 10 증감 (+ / -) */
-                <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-1.5 py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setManualPerfumeMl(prev => Math.max(10, (prev || 50) - 10))}
-                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 active:scale-95"
-                    title="10ml 감소"
-                  >
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    value={manualPerfumeMl}
-                    onChange={(e) => setManualPerfumeMl(Math.max(1, parseInt(e.target.value) || 0))}
-                    className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setManualPerfumeMl(prev => (prev || 50) + 10)}
-                    className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 active:scale-95"
-                    title="10ml 증가"
-                  >
-                    <Plus className="w-3 h-3" />
-                  </button>
-                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold mr-0.5 shrink-0">
-                    ml
-                  </span>
+            {isPerfume || isLiquor ? (
+              <>
+                {/* 수량 (단위: 병) - 용량과 동일한 가로 너비 & 3자리(999) 넉넉한 표시 */}
+                <div className="w-[78px] shrink-0">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                    수량 *
+                  </label>
+                  <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={manualQuantity}
+                      onChange={(e) => setManualQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+                    />
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold ml-1 shrink-0">
+                      병
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                /* 일반/주류/담배: 단위 개/병/보루, 기본값 1, Step 1 증감 (+ / -) */
+
+                {/* 용량 (단위: ml) - 수량과 동일한 가로 너비 & 3자리(999) 넉넉한 표시 */}
+                <div className="w-[78px] shrink-0">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                    용량 *
+                  </label>
+                  <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="any"
+                      value={manualPerfumeMl}
+                      onChange={(e) => setManualPerfumeMl(Math.max(1, parseInt(e.target.value) || 0))}
+                      className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+                    />
+                    <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold ml-0.5 shrink-0">
+                      ml
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* 일반/담배: 수량 (단위: 개 / 보루) */
+              <div className="w-[40%] shrink-0">
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                  수량 *
+                </label>
                 <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-1.5 py-1.5">
                   <button
                     type="button"
@@ -462,11 +481,11 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
                     <Plus className="w-3 h-3" />
                   </button>
                   <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold mr-0.5 shrink-0">
-                    {isLiquor ? '병' : isTobacco ? '보루' : '개'}
+                    {isTobacco ? '보루' : '개'}
                   </span>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* 6. 결제 통화 & 결제 금액 */}
@@ -563,6 +582,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

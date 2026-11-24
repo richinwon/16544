@@ -64,9 +64,9 @@ export const Screen5Guide: React.FC = () => {
   ];
 
   return (
-    <div className="p-4 space-y-5 pb-24">
+    <div className="p-2.5 sm:p-3 space-y-4 pb-24">
       {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-2">
+      <div className="relative flex items-center justify-center pt-1.5">
         <button
           onClick={() => setCurrentScreen(1)}
           className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"

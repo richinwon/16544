@@ -54,7 +54,7 @@ export const BottomNavigation: React.FC = () => {
               }`}
             >
               <Icon className="w-5 h-5 mb-0.5 shrink-0" />
-              <span className="text-[10px] leading-tight text-center whitespace-nowrap break-keep">
+              <span className="text-[11px] leading-tight text-center whitespace-nowrap break-keep">
                 {item.label}
               </span>
             </button>

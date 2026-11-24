@@ -55,7 +55,7 @@ export const Screen2Camera: React.FC = () => {
   // 폴더 입력란 유효성 검증 함수
   const validateFolderOrAlert = (): boolean => {
     const isDateInvalid = !manualDate || manualDate === '날짜' || manualDate === '날짜:날짜' || !/^\d{4}-\d{2}-\d{2}$/.test(manualDate);
-    const isCountryInvalid = !manualCountry || manualCountry.trim() === '' || manualCountry === '입력' || manualCountry === '국가명:국가입력';
+    const isCountryInvalid = !manualCountry || manualCountry.trim() === '' || manualCountry === '입력' || manualCountry === '정확히입력' || manualCountry === '국가명:국가입력';
     const isCityInvalid = !manualCity || manualCity.trim() === '' || manualCity === '입력' || manualCity === '도시명:도시입력';
 
     if (isDateInvalid || isCountryInvalid || isCityInvalid) {
@@ -276,16 +276,16 @@ export const Screen2Camera: React.FC = () => {
 
   // Preview folder name
   const isDateReady = manualDate && manualDate !== '날짜' && manualDate !== '날짜:날짜' && /^\d{4}-\d{2}-\d{2}$/.test(manualDate);
-  const isCountryReady = manualCountry && manualCountry !== '입력' && manualCountry !== '국가명:국가입력' && manualCountry.trim() !== '';
+  const isCountryReady = manualCountry && manualCountry !== '입력' && manualCountry !== '정확히입력' && manualCountry !== '국가명:국가입력' && manualCountry.trim() !== '';
   const isCityReady = manualCity && manualCity !== '입력' && manualCity !== '도시명:도시입력' && manualCity.trim() !== '';
   const previewFolder = isDateReady && isCountryReady && isCityReady
     ? generateFolderName(manualDate, manualCountry, manualCity)
     : '저장 폴더명';
 
   return (
-    <div className="p-4 space-y-4 pb-24">
+    <div className="p-2.5 sm:p-3 space-y-3 pb-24">
       {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-2">
+      <div className="relative flex items-center justify-center pt-1.5">
         <button
           onClick={() => setCurrentScreen(1)}
           className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
@@ -326,7 +326,7 @@ export const Screen2Camera: React.FC = () => {
         <div className="grid grid-cols-[1.45fr_1fr_1fr] gap-1.5">
           {/* 1. 날짜 선택기 (폴더 드롭다운 통일 디자인) */}
           <div className="min-w-0">
-            <label className="text-[10px] text-gray-400 block mb-0.5 text-left font-semibold">
+            <label className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5 text-left font-bold">
               구매일자 *
             </label>
             <CustomDatePicker
@@ -339,21 +339,21 @@ export const Screen2Camera: React.FC = () => {
 
           {/* 2. 국가명 입력란 */}
           <div className="min-w-0">
-            <label className="text-[10px] text-gray-400 block mb-0.5 text-left font-semibold">
+            <label className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5 text-left font-bold">
               국가명 *
             </label>
             <input
               type="text"
               value={manualCountry}
-              placeholder="입력"
+              placeholder="정확히입력"
               onChange={(e) => setManualCountry(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
+              className="w-full px-2 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder:text-rose-500 dark:placeholder:text-rose-400 placeholder:font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
             />
           </div>
 
           {/* 3. 도시명 입력란 */}
           <div className="min-w-0">
-            <label className="text-[10px] text-gray-400 block mb-0.5 text-left font-semibold">
+            <label className="text-[11px] text-gray-500 dark:text-gray-400 block mb-0.5 text-left font-bold">
               도시명 *
             </label>
             <input
@@ -361,12 +361,12 @@ export const Screen2Camera: React.FC = () => {
               value={manualCity}
               placeholder="입력"
               onChange={(e) => setManualCity(e.target.value)}
-              className="w-full px-2.5 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
+              className="w-full px-2 py-1.5 rounded-xl bg-white/95 dark:bg-gray-800 border border-gray-200/80 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-white placeholder-gray-400 placeholder:font-normal focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-xs"
             />
           </div>
         </div>
 
-        <p className="text-[10px] text-gray-400 text-left">
+        <p className="text-[11px] text-gray-500 dark:text-gray-400 text-left leading-snug">
           * 여행일정, 국가명, 도시명을 입력하면 지정한 폴더로 영수증이 안전하게 분류 저장됩니다.
         </p>
       </div>

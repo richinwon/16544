@@ -1,14 +1,16 @@
 export type ProductCategory = 
-  | 'cosmetics_general' // 화장품 / 일반물품: 15%
-  | 'clothing_shoes'    // 의류 / 신발: 18%
-  | 'fur'               // 모피제품: 19%
-  | 'bags'              // 가방 / 핸드백: 20%
-  | 'deer_antler'       // 녹용: 21%
-  | 'liquor'            // 주류 (별도 한도)
-  | 'tobacco'           // 담배 (별도 한도)
-  | 'perfume'           // 향수 (별도 한도)
-  | 'restaurant'        // 음식점 (0%)
-  | 'transportation';   // 교통비 (0%)
+  | 'cosmetics_general' // 기타일반(화장품,가방 포함) 15%
+  | 'clothing_shoes'    // 의류/신발 18%
+  | 'jewelry'           // 귀금속 45%
+  | 'luxury_watch_bag'  // 고급시계 / 가방(과세가격 192만 3천원 초과시) 45%
+  | 'fur'               // 모피제품 19%
+  | 'bags'              // (하위 호환용: 가방/핸드백 15%)
+  | 'deer_antler'       // 녹용 21%
+  | 'liquor'            // 주류(별도한도)
+  | 'tobacco'           // 담배(별도한도)
+  | 'perfume'           // 향수(별도한도)
+  | 'restaurant'        // 음식점 -
+  | 'transportation';   // 교통비 -
 
 export interface ProductItem {
   id: string;
@@ -22,7 +24,10 @@ export interface ProductItem {
   excludedFromDuty?: boolean; // 입국 시 면세 한도 합산 제외 여부
   // Specific details for separate limits
   liquorBottles?: number;
+  liquorMl?: number; // 주류 용량(mL), 기본값: 750mL/병
+  liquorType?: 'general' | 'wine'; // 일반 증류주/위스키('general') vs 와인/과실주('wine')
   tobaccoPacks?: number; // 1 pack = 20 cigs, 10 packs = 1 carton (200 cigs)
+  tobaccoSticks?: number; // 궐련 개비수 (200개비 한도)
   perfumeMl?: number;
 }
 
@@ -37,7 +42,7 @@ export interface Receipt {
   items: ProductItem[];
   totalUSD: number;
   createdAt: number;
-  expiresAt?: number; // 촬영/생성일로부터 30일 후 만료 타임스탬프(ms)
+  expiresAt?: number; // 최초 저장일(생성일, createdAt)로부터 30일 후 만료 타임스탬프(ms)
 }
 
 export interface ExchangeRates {
@@ -61,36 +66,41 @@ export interface UserCredential {
 }
 
 export const CATEGORY_ORDER: ProductCategory[] = [
-  'liquor',            // 1. 주류 (별도한도)
-  'tobacco',           // 2. 담배 (별도한도)
-  'perfume',           // 3. 향수 (별도한도)
-  'cosmetics_general', // 4. 화장품 / 일반물품
-  'clothing_shoes',    // 5. 의류 / 신발
-  'bags',              // 6. 가방 / 핸드백
-  'fur',               // 7. 모피제품
-  'deer_antler',       // 8. 녹용
-  'restaurant',        // 9. 음식점
-  'transportation',    // 10. 교통비
+  'liquor',            // 1. 주류(별도한도)
+  'tobacco',           // 2. 담배(별도한도)
+  'perfume',           // 3. 향수(별도한도)
+  'cosmetics_general', // 4. 기타일반(화장품,가방 포함) — 15%
+  'clothing_shoes',    // 5. 의류/신발 — 18%
+  'jewelry',           // 6. 귀금속 — 45%
+  'luxury_watch_bag',  // 7. 고급시계 / 가방(과세가격 192만 3천원 초과시) — 45%
+  'fur',               // 8. 모피제품 — 19%
+  'deer_antler',       // 9. 녹용 — 21%
+  'restaurant',        // 10. 음식점 — -
+  'transportation',    // 11. 교통비 — -
 ];
 
 export const CATEGORY_LABELS: Record<ProductCategory, string> = {
-  cosmetics_general: '화장품 / 일반물품',
-  clothing_shoes: '의류 / 신발',
+  liquor: '주류(별도한도)',
+  tobacco: '담배(별도한도)',
+  perfume: '향수(별도한도)',
+  cosmetics_general: '일반(화장품,가방 포함)',
+  clothing_shoes: '의류/신발',
+  jewelry: '귀금속',
+  luxury_watch_bag: '고급시계 / 가방',
   fur: '모피제품',
-  bags: '가방 / 핸드백',
   deer_antler: '녹용',
-  liquor: '주류 (별도한도)',
-  tobacco: '담배 (별도한도)',
-  perfume: '향수 (별도한도)',
   restaurant: '음식점',
   transportation: '교통비',
+  bags: '일반(화장품,가방 포함)',
 };
 
 export const CATEGORY_TAX_RATES: Record<ProductCategory, number> = {
   cosmetics_general: 0.15,
   clothing_shoes: 0.18,
+  jewelry: 0.45,
+  luxury_watch_bag: 0.45,
   fur: 0.19,
-  bags: 0.20,
+  bags: 0.15,
   deer_antler: 0.21,
   liquor: 0.0, // 별도 계산
   tobacco: 0.0,

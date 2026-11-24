@@ -45,10 +45,16 @@ export const MainApp: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex justify-center text-gray-900 dark:text-gray-100 transition-colors">
+    <div className="fixed inset-0 h-full max-h-full overflow-hidden bg-slate-100 dark:bg-slate-950 flex justify-center text-gray-900 dark:text-gray-100 transition-colors">
       {/* 480px width mobile wrapper container */}
-      <div className="w-full max-w-[480px] min-h-screen bg-slate-50 dark:bg-gray-900 shadow-2xl relative flex flex-col justify-between pb-[68px]">
-        <main className="flex-1 overflow-x-hidden">
+      <div className="w-full max-w-[480px] h-full max-h-full overflow-hidden bg-slate-50 dark:bg-gray-900 shadow-2xl relative flex flex-col justify-between">
+        <main
+          className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+          style={{
+            paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
           {renderScreen()}
         </main>
         <BottomNavigation />

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import type { Receipt, ProductItem, ProductCategory } from '../types';
-import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER } from '../types';
+import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER, generateFolderName, parseFolderName } from '../types';
+import { calculateDuty } from '../utils/dutyCalculator';
+import { recognizeReceipt, compressReceiptThumbnail } from '../utils/ocrService';
 import * as XLSX from 'xlsx';
 import { FolderSelect } from './FolderSelect';
 import { ManualReceiptModal } from './ManualReceiptModal';
@@ -53,6 +55,7 @@ export const Screen3List: React.FC = () => {
     selectedFolder,
     setSelectedFolder,
     folders,
+    addReceipt,
     deleteReceipt, 
     addItemToReceipt, 
     updateItemInReceipt,
@@ -60,6 +63,10 @@ export const Screen3List: React.FC = () => {
     deleteItemFromReceipt, 
     convertCurrencyToUSD,
     convertUSDToKRW,
+    exchangeRates,
+    tripDate,
+    tripCountry,
+    tripCity,
     setCurrentScreen 
   } = useApp();
 
@@ -85,6 +92,75 @@ export const Screen3List: React.FC = () => {
   const [showDirectManualModal, setShowDirectManualModal] = useState(false);
   // 영수증 추가 버튼 클릭 시 촬영 / 수기 등록 선택 옵션 모달
   const [showAddReceiptChoiceModal, setShowAddReceiptChoiceModal] = useState(false);
+  const directCameraInputRef = useRef<HTMLInputElement>(null);
+  const [isDirectAnalyzing, setIsDirectAnalyzing] = useState(false);
+
+  const handleDirectCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    try {
+      setIsDirectAnalyzing(true);
+      const imgSrc = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.onerror = () => reject(new Error('FILE_READ_ERROR'));
+        reader.readAsDataURL(file);
+      });
+
+      const parsed = await recognizeReceipt(imgSrc);
+      if (
+        !parsed ||
+        parsed.classification !== 'RECEIPT' ||
+        !parsed.storeName ||
+        !parsed.totalLocal ||
+        parsed.totalLocal <= 0 ||
+        !Array.isArray(parsed.items) ||
+        parsed.items.length === 0
+      ) {
+        throw new Error('NOT_RECEIPT_IMAGE');
+      }
+
+      const totalUSD = parsed.items.reduce((sum, item) => sum + (Number(item.priceUSD) || 0), 0);
+      if (!Number.isFinite(totalUSD) || totalUSD <= 0) {
+        throw new Error('NOT_RECEIPT_IMAGE');
+      }
+
+      const compactThumbnail = await compressReceiptThumbnail(imgSrc);
+      const parsedFolder = parseFolderName(selectedFolder);
+      const targetCountry = tripCountry || parsedFolder.country || '일본';
+      const targetCity = tripCity || parsedFolder.city || '도쿄';
+      const targetDate = tripDate || parsed.date || new Date().toISOString().split('T')[0];
+      const targetFolderName = selectedFolder || generateFolderName(targetDate, targetCountry, targetCity);
+
+      const newReceipt: Receipt = {
+        id: 'receipt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        date: targetDate,
+        country: targetCountry,
+        city: targetCity,
+        folderName: targetFolderName,
+        storeName: parsed.storeName,
+        imageUrl: compactThumbnail,
+        items: parsed.items,
+        totalUSD: Math.round(totalUSD * 100) / 100,
+        createdAt: Date.now(),
+      };
+
+      addReceipt(newReceipt);
+      alert(`✨ 영수증 분석 완료!\n여행 폴더 [${targetFolderName}]에 안전하게 저장되었습니다.`);
+    } catch (err: any) {
+      const errMsg = String(err?.message || '');
+      if (errMsg === 'NOT_RECEIPT_IMAGE' || errMsg === 'RECEIPT_RECOGNITION_FAILED') {
+        alert('영수증이 아닌 이미지로 판단되었습니다. 실제 영수증을 촬영해 주세요.');
+        setShowDirectManualModal(true);
+      } else {
+        alert('AI 분석 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      }
+    } finally {
+      setIsDirectAnalyzing(false);
+    }
+  };
 
   // Direct item add modal
   const [targetReceiptForAdd, setTargetReceiptForAdd] = useState<string | null>(null);
@@ -119,6 +195,7 @@ export const Screen3List: React.FC = () => {
     !!targetReceiptForAdd ||
     !!editingItemData ||
     showAddReceiptChoiceModal ||
+    showDirectManualModal ||
     isAddCatDropdownOpen ||
     isAddCurrDropdownOpen ||
     isEditCatDropdownOpen ||
@@ -155,14 +232,13 @@ export const Screen3List: React.FC = () => {
       showToast('품목명을 입력해 주세요!');
       return;
     }
-    if (newItemCategory === 'perfume') {
+    if (!newItemQuantity || newItemQuantity < 1) {
+      showToast('수량을 1 이상 입력해 주세요!');
+      return;
+    }
+    if (newItemCategory === 'perfume' || newItemCategory === 'liquor') {
       if (!newItemPerfumeMl || newItemPerfumeMl <= 0) {
-        showToast('향수 용량(ml)을 올바르게 입력해 주세요!');
-        return;
-      }
-    } else {
-      if (!newItemQuantity || newItemQuantity < 1) {
-        showToast('수량을 1개 이상 입력해 주세요!');
+        showToast('용량(ml)을 올바르게 입력해 주세요!');
         return;
       }
     }
@@ -178,8 +254,9 @@ export const Screen3List: React.FC = () => {
     const isPerfume = newItemCategory === 'perfume';
     const isLiquor = newItemCategory === 'liquor';
     const isTobacco = newItemCategory === 'tobacco';
-    const q = isPerfume ? 1 : Math.max(1, Math.floor(newItemQuantity || 1));
+    const q = Math.max(1, Math.floor(newItemQuantity || 1));
     const perfumeVal = isPerfume ? (newItemPerfumeMl || 50) : undefined;
+    const liquorMlVal = isLiquor ? (newItemPerfumeMl || 750) : undefined;
 
     const item: ProductItem = {
       id: 'item-' + Date.now(),
@@ -191,6 +268,7 @@ export const Screen3List: React.FC = () => {
       quantity: q,
       taxLocal: isTaxExcludedCategory ? 0 : (parseFloat(newItemTax) || 0),
       liquorBottles: isLiquor ? q : undefined,
+      liquorMl: liquorMlVal,
       tobaccoPacks: isTobacco ? (q * 10) : undefined,
       perfumeMl: perfumeVal,
     };
@@ -235,8 +313,12 @@ export const Screen3List: React.FC = () => {
     rList.forEach((r) => {
       r.items.forEach((item) => {
         const catLabel = CATEGORY_LABELS[item.category] || item.category;
-        const taxRatePercent = ((CATEGORY_TAX_RATES[item.category] ?? 0.15) * 100).toFixed(0) + '%';
-        const isExcluded = item.excludedFromDuty ? '제외' : '포함';
+        const isTaxExcluded = item.category === 'restaurant' || item.category === 'transportation';
+        const isSeparateLimit = item.category === 'liquor' || item.category === 'tobacco' || item.category === 'perfume';
+        const taxRatePercent = isTaxExcluded || isSeparateLimit
+          ? '-'
+          : ((CATEGORY_TAX_RATES[item.category] ?? 0.15) * 100).toFixed(0) + '%';
+        const isExcluded = item.excludedFromDuty || isTaxExcluded ? '제외' : '포함';
 
         dataRows.push([
           folderName,
@@ -280,6 +362,76 @@ export const Screen3List: React.FC = () => {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, '구매내역');
+
+    // 면세리포트 (기본 $800 초과 및 별도면세한도 주류/담배/향수 초과 예상세금·추징금 산출내역) 시트 추가
+    const allFolderItems = rList.flatMap((r) => r.items);
+    const dutyResult = calculateDuty(allFolderItems, exchangeRates?.KRW || 1380, exchangeRates as unknown as Partial<Record<string, number>>);
+
+    const reportRows: (string | number)[][] = [
+      ['[면세비서] 면세 리포트 및 예상 세금/추징금 산출내역', ''],
+      ['여행 폴더명', folderName],
+      ['적용 과세환율 (1 USD 기준)', `${(exchangeRates?.KRW || 1380).toLocaleString()}원`],
+      ['', ''],
+      ['■ 기본 면세 한도 ($800) 현황', ''],
+      ['일반 물품 구매 합계 (USD)', `$${dutyResult.totalGeneralUSD.toFixed(2)}`],
+      ['일반 물품 구매 합계 (KRW)', `${convertUSDToKRW(dutyResult.totalGeneralUSD).toLocaleString()}원`],
+      ['일반 물품 과세 대상 금액', `$${dutyResult.generalTaxableUSD.toFixed(2)} (${dutyResult.generalTaxableKRW.toLocaleString()}원)`],
+      ['상태', dutyResult.isOverLimit ? '한도 초과 (과세 대상)' : '면세 범위 내 안전'],
+      ['', ''],
+      ['■ 별도 면세 한도 품목 현황 (기본 $800와 독립 계산)', ''],
+      [
+        '주류 (기준: 2,000mL 이하 AND $400 이하)',
+        `${dutyResult.liquor.totalBottles}병 (${dutyResult.liquor.totalMl}mL) / $${dutyResult.liquor.totalUSD.toFixed(2)} [${dutyResult.liquor.isOver ? '초과 (전액 과세)' : '면세'}]`
+      ],
+      [
+        '담배 (기준: 200개비 / 1보루 이하)',
+        `${dutyResult.tobacco.cartons}보루 (${dutyResult.tobacco.totalSticks}개비) [${dutyResult.tobacco.isOver ? `초과 (${dutyResult.tobacco.excessSticks}개비 과세)` : '면세'}]`
+      ],
+      [
+        '향수 (기준: 100mL 이하, 병 단위 불가분)',
+        `${dutyResult.perfume.totalMl}mL [${dutyResult.perfume.isOver ? `초과 (과세 ${dutyResult.perfume.taxableMl}mL)` : '면세'}]`
+      ],
+      ['', ''],
+      ['■ 통합 예상 세금 및 자진신고 vs 미신고 추징금 비교', ''],
+      ['총 과세 대상 금액 (KRW / USD)', `${dutyResult.taxableKRW.toLocaleString()}원 ($${dutyResult.taxableUSD.toFixed(2)})`],
+      ['기본 산출세액 총합 (KRW / USD)', `${dutyResult.baseTaxKRW.toLocaleString()}원 ($${dutyResult.baseTaxUSD.toFixed(2)})`],
+      ['자진신고 감면액 (관세 30%, 통합 20만원 한도)', `-${dutyResult.voluntaryDiscountKRW.toLocaleString()}원 ($${dutyResult.voluntaryDiscountUSD.toFixed(2)})`],
+      ['자진신고 시 최종 납부세액', `${dutyResult.voluntaryTaxKRW.toLocaleString()}원 ($${dutyResult.voluntaryTaxUSD.toFixed(2)})`],
+      ['미신고 가산세 (기본세액의 40%)', `+${dutyResult.penaltySurchargeKRW.toLocaleString()}원 ($${dutyResult.penaltySurchargeUSD.toFixed(2)})`],
+      ['미신고 적발 시 최종 추징금 (140%)', `${dutyResult.unreportedPenaltyTaxKRW.toLocaleString()}원 ($${dutyResult.unreportedPenaltyTaxUSD.toFixed(2)})`],
+      ['자진신고 시 절감액', `+${dutyResult.savedByVoluntaryKRW.toLocaleString()}원 절약`],
+      ['', ''],
+      ['■ 항목별 과세 근거 및 세액 분해 상세', '', '', '', '', ''],
+      ['과세 항목 (근거)', '품목 분류', '과세 대상 금액(원)', '기본 산출세액(원)', '자진신고 감면액(관세 30%)', '미신고 가산세(40%)', '세부 산출 내역']
+    ];
+
+    if (dutyResult.categoryDetails.length === 0) {
+      reportRows.push(['과세 대상 없음 (면세 한도 내)', '-', 0, 0, 0, 0, '-']);
+    } else {
+      dutyResult.categoryDetails.forEach((detail) => {
+        reportRows.push([
+          detail.basisText,
+          detail.label,
+          detail.taxableAmountKRW,
+          detail.baseTaxKRW,
+          detail.voluntaryDiscountKRW,
+          detail.unreportedSurchargeKRW,
+          (detail.subTaxDetails || []).join(' / ')
+        ]);
+      });
+    }
+
+    const reportSheet = XLSX.utils.aoa_to_sheet(reportRows);
+    reportSheet['!cols'] = [
+      { wch: 36 },
+      { wch: 26 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 50 }
+    ];
+    XLSX.utils.book_append_sheet(workbook, reportSheet, '면세리포트_세금산출');
 
     const safeFolderName = folderName.replace(/[/\\?%*:|"<>]/g, '_');
     XLSX.writeFile(workbook, `${safeFolderName}_구매내역.xlsx`);
@@ -413,9 +565,9 @@ export const Screen3List: React.FC = () => {
   const refundStatus = calculateRefundStatus();
 
   return (
-    <div className="p-4 space-y-4 pb-24">
+    <div className="p-2.5 sm:p-3 space-y-3 pb-24">
       {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-2">
+      <div className="relative flex items-center justify-center pt-1.5">
         <button
           onClick={() => setCurrentScreen(1)}
           className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
@@ -508,6 +660,11 @@ export const Screen3List: React.FC = () => {
             </div>
           </div>
 
+          {/* 폴더선택박스와 영수증 목록 표시부 사이 30일 보관 안내 문구 */}
+          <p className="text-[11px] font-bold text-rose-500 dark:text-rose-400 px-1 text-left">
+            영수증 내역은 최초 저장일로부터 30일 이후 자동 삭제됩니다.
+          </p>
+
           {folders.length === 0 ? (
             <div className="p-8 text-center bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700">
               <Folder className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
@@ -547,7 +704,7 @@ export const Screen3List: React.FC = () => {
                       setSelectedFolder(folderName);
                       toggleFolderCollapse(folderName);
                     }}
-                    className="p-4 bg-gray-50/70 dark:bg-gray-900/60 flex items-center justify-between cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-900 transition-colors"
+                    className="p-3 bg-gray-50/70 dark:bg-gray-900/60 flex items-center justify-between cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-900 transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
                       <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
@@ -591,7 +748,7 @@ export const Screen3List: React.FC = () => {
 
                   {/* Folder's Receipts List (Collapsible) */}
                   {!isCollapsed && (
-                    <div className="p-3 space-y-3">
+                    <div className="p-2.5 space-y-2.5">
                       {rList.length === 0 ? (
                         <div className="py-5 text-center text-xs text-gray-400">
                           이 폴더에 등록된 영수증이 없습니다.
@@ -600,7 +757,7 @@ export const Screen3List: React.FC = () => {
                         rList.map((receipt) => (
                           <div 
                             key={receipt.id}
-                            className="bg-white dark:bg-gray-800/90 rounded-2xl p-3 border border-gray-100 dark:border-gray-700/60 shadow-xs space-y-2.5"
+                            className="bg-white dark:bg-gray-800/90 rounded-2xl p-2.5 border border-gray-100 dark:border-gray-700/60 shadow-xs space-y-2"
                           >
                             {/* Receipt Header */}
                             <div className="flex justify-between items-start pb-2 border-b border-gray-100 dark:border-gray-700/60">
@@ -678,30 +835,40 @@ export const Screen3List: React.FC = () => {
                                       setEditTaxLocal(String(item.taxLocal ?? 0));
                                       setEditCurrency(item.currency || 'USD');
                                       setEditQuantity(item.quantity || 1);
-                                      setEditPerfumeMl(item.perfumeMl || 50);
+                                      setEditPerfumeMl(
+                                        item.category === 'liquor'
+                                          ? (item.liquorMl || 750)
+                                          : (item.perfumeMl || 50)
+                                      );
                                     }}
                                     className="flex-1 pr-2 cursor-pointer group"
                                   >
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-semibold text-gray-800 dark:text-gray-200 text-[11px] group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-1">
+                                      <span className="font-bold text-gray-800 dark:text-gray-200 text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-1">
                                         {item.name}
                                         <Edit2 className="w-2.5 h-2.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                                       </span>
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+                                      <span className="text-[10.5px] px-1.5 py-0.2 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-semibold">
                                         {CATEGORY_LABELS[item.category] || item.category}
                                       </span>
                                       {/* 수량 및 단위 배지 */}
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/50 dark:border-blue-900/40">
+                                      <span className="text-[10.5px] px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/50 dark:border-blue-900/40">
                                         {item.quantity || 1}
-                                        {item.category === 'tobacco' ? '보루' : item.category === 'perfume' ? `병 (${item.perfumeMl || 100}ml)` : '개'}
+                                        {item.category === 'tobacco'
+                                          ? '보루'
+                                          : item.category === 'perfume'
+                                          ? `병 (${item.perfumeMl || 50}ml)`
+                                          : item.category === 'liquor'
+                                          ? `병 (${item.liquorMl || 750}ml)`
+                                          : '개'}
                                       </span>
                                       {item.excludedFromDuty && (
-                                        <span className="text-[10px] font-bold text-rose-500">
+                                        <span className="text-[11px] font-bold text-rose-500">
                                           [입국 시 면세 한도 합산 제외]
                                         </span>
                                       )}
                                     </div>
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                    <div className="text-[11px] text-gray-400 mt-0.5">
                                       {item.taxLocal ? `세금: ${item.currency} ${item.taxLocal.toLocaleString()}` : `세금: ${item.currency} 0`}
                                     </div>
                                   </div>
@@ -797,6 +964,11 @@ export const Screen3List: React.FC = () => {
             </div>
           </div>
 
+          {/* 폴더 선택 박스와 날짜별 합계 표시부 사이 공란 안내 문구 */}
+          <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300 px-1 text-left">
+            음식점/교통비를 제외한 물품 구매목록만 합산됩니다.
+          </p>
+
           {/* Date summary cards */}
           {sortedDates.length === 0 ? (
             <div className="p-8 text-center bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700">
@@ -879,7 +1051,11 @@ export const Screen3List: React.FC = () => {
       {/* Modal: Category Product Items Information Popup */}
       {selectedCategoryDetail && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain p-5 shadow-2xl border border-gray-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col">
+            <div
+              className="w-full max-h-[85vh] overflow-y-auto overscroll-contain p-5 modal-scroll touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
             <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
               <div>
                 <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
@@ -937,6 +1113,7 @@ export const Screen3List: React.FC = () => {
             >
               확인
             </button>
+            </div>
           </div>
         </div>
       )}
@@ -944,7 +1121,11 @@ export const Screen3List: React.FC = () => {
       {/* Modal: View Receipt Image */}
       {selectedReceipt && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto overscroll-contain p-5 shadow-2xl border border-gray-100 dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col">
+            <div
+              className="w-full max-h-[90vh] overflow-y-auto overscroll-contain p-5 modal-scroll touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-extrabold text-sm text-gray-900 dark:text-white">
                 영수증 상세 정보
@@ -998,6 +1179,7 @@ export const Screen3List: React.FC = () => {
             >
               닫기
             </button>
+            </div>
           </div>
         </div>
       )}
@@ -1005,7 +1187,11 @@ export const Screen3List: React.FC = () => {
       {/* Modal: Direct item add */}
       {targetReceiptForAdd && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative flex flex-col">
+            <div
+              className="w-full max-h-[90vh] overflow-y-auto overscroll-contain p-6 modal-scroll touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
             {/* 상단 슬라이드다운 커스텀 Toast 알림 컴포넌트 */}
             {toastMessage && (
               <div className="absolute top-3 left-4 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
@@ -1071,6 +1257,10 @@ export const Screen3List: React.FC = () => {
                               setIsAddCatDropdownOpen(false);
                               if (cat === 'perfume') {
                                 setNewItemPerfumeMl(50);
+                                setNewItemQuantity(1);
+                              } else if (cat === 'liquor') {
+                                setNewItemPerfumeMl(750);
+                                setNewItemQuantity(1);
                               }
                             }}
                             className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-all ${
@@ -1089,57 +1279,69 @@ export const Screen3List: React.FC = () => {
                 )}
               </div>
 
-              {/* 품목명(60%) : 수량/용량(40%) 6:4 가로 비율 배치 */}
-              <div className="flex gap-2 items-start">
-                <div className="w-[60%]">
+              {/* 품목명 + 수량(병/보루/개) + (주류/향수 전용) 용량(ml) 배치 */}
+              <div className="flex gap-1.5 items-start">
+                <div className="flex-1 min-w-0">
                   <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                     품목명 *
                   </label>
                   <input
                     type="text"
-                    placeholder={newItemCategory === 'perfume' ? "예: 샤넬 넘버5" : "예: 구찌 지갑"}
+                    placeholder={newItemCategory === 'perfume' ? "예: 샤넬 넘버5" : newItemCategory === 'liquor' ? "예: 발렌타인" : "예: 구찌 지갑"}
                     value={newItemName}
                     onChange={(e) => setNewItemName(e.target.value)}
                     required
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 font-medium"
+                    className="w-full px-2.5 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 font-medium"
                   />
                 </div>
 
-                <div className="w-[40%]">
-                  <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
-                    {newItemCategory === 'perfume' ? '용량 *' : '수량 *'}
-                  </label>
-                  {newItemCategory === 'perfume' ? (
-                    <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-1.5 py-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setNewItemPerfumeMl(prev => Math.max(10, (prev || 50) - 10))}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 active:scale-95"
-                        title="10ml 감소"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        step="any"
-                        value={newItemPerfumeMl}
-                        onChange={(e) => setNewItemPerfumeMl(Math.max(1, parseInt(e.target.value) || 0))}
-                        className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setNewItemPerfumeMl(prev => (prev || 50) + 10)}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 active:scale-95"
-                        title="10ml 증가"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                      <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold mr-0.5 shrink-0">
-                        ml
-                      </span>
+                {newItemCategory === 'perfume' || newItemCategory === 'liquor' ? (
+                  <>
+                    {/* 수량 (단위: 병) - 용량과 동일한 가로 너비 & 3자리(999) 넉넉한 크기 */}
+                    <div className="w-[78px] shrink-0">
+                      <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                        수량 *
+                      </label>
+                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={newItemQuantity}
+                          onChange={(e) => setNewItemQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+                        />
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold ml-1 shrink-0">
+                          병
+                        </span>
+                      </div>
                     </div>
-                  ) : (
+
+                    {/* 용량 (단위: ml) - 수량과 동일한 가로 너비 & 3자리(999) 넉넉한 크기 */}
+                    <div className="w-[78px] shrink-0">
+                      <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                        용량 *
+                      </label>
+                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <input
+                          type="number"
+                          min="1"
+                          step="any"
+                          value={newItemPerfumeMl}
+                          onChange={(e) => setNewItemPerfumeMl(Math.max(1, parseInt(e.target.value) || 0))}
+                          className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+                        />
+                        <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold ml-0.5 shrink-0">
+                          ml
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-[40%] shrink-0">
+                    <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                      수량 *
+                    </label>
                     <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-1.5 py-1.5">
                       <button
                         type="button"
@@ -1164,11 +1366,11 @@ export const Screen3List: React.FC = () => {
                         <Plus className="w-3 h-3" />
                       </button>
                       <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold mr-0.5 shrink-0">
-                        {newItemCategory === 'liquor' ? '병' : newItemCategory === 'tobacco' ? '보루' : '개'}
+                        {newItemCategory === 'tobacco' ? '보루' : '개'}
                       </span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1265,6 +1467,7 @@ export const Screen3List: React.FC = () => {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
@@ -1272,7 +1475,11 @@ export const Screen3List: React.FC = () => {
       {/* Modal: Edit Existing Item (품목명, 품목분류, 금액, 세금 수정 기능) */}
       {editingItemData && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 relative flex flex-col">
+            <div
+              className="w-full max-h-[90vh] overflow-y-auto overscroll-contain p-6 modal-scroll touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
             {/* 상단 슬라이드다운 커스텀 Toast 알림 컴포넌트 */}
             {toastMessage && (
               <div className="absolute top-3 left-4 right-4 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
@@ -1311,14 +1518,13 @@ export const Screen3List: React.FC = () => {
                   showToast('품목명을 입력해 주세요!');
                   return;
                 }
-                if (editCategory === 'perfume') {
+                if (!editQuantity || editQuantity < 1) {
+                  showToast('수량을 1 이상 입력해 주세요!');
+                  return;
+                }
+                if (editCategory === 'perfume' || editCategory === 'liquor') {
                   if (!editPerfumeMl || editPerfumeMl <= 0) {
-                    showToast('향수 용량(ml)을 올바르게 입력해 주세요!');
-                    return;
-                  }
-                } else {
-                  if (!editQuantity || editQuantity < 1) {
-                    showToast('수량을 1개 이상 입력해 주세요!');
+                    showToast('용량(ml)을 올바르게 입력해 주세요!');
                     return;
                   }
                 }
@@ -1334,8 +1540,9 @@ export const Screen3List: React.FC = () => {
                 const isPerfume = editCategory === 'perfume';
                 const isLiquor = editCategory === 'liquor';
                 const isTobacco = editCategory === 'tobacco';
-                const q = isPerfume ? 1 : Math.max(1, Math.floor(editQuantity || 1));
+                const q = Math.max(1, Math.floor(editQuantity || 1));
                 const perfumeVal = isPerfume ? (editPerfumeMl || 50) : undefined;
+                const liquorMlVal = isLiquor ? (editPerfumeMl || 750) : undefined;
 
                 const updated: ProductItem = {
                   ...editingItemData.item,
@@ -1346,6 +1553,7 @@ export const Screen3List: React.FC = () => {
                   currency: editCurrency,
                   quantity: q,
                   liquorBottles: isLiquor ? q : undefined,
+                  liquorMl: liquorMlVal,
                   tobaccoPacks: isTobacco ? (q * 10) : undefined,
                   perfumeMl: perfumeVal,
                   taxLocal: isTaxExcludedCategory ? 0 : (parseFloat(editTaxLocal) || 0),
@@ -1390,6 +1598,10 @@ export const Screen3List: React.FC = () => {
                               setIsEditCatDropdownOpen(false);
                               if (cat === 'perfume') {
                                 setEditPerfumeMl(50);
+                                setEditQuantity(1);
+                              } else if (cat === 'liquor') {
+                                setEditPerfumeMl(750);
+                                setEditQuantity(1);
                               }
                             }}
                             className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-all ${
@@ -1408,9 +1620,9 @@ export const Screen3List: React.FC = () => {
                 )}
               </div>
 
-              {/* 품목명(60%) : 수량/용량(40%) 6:4 가로 비율 배치 */}
-              <div className="flex gap-2 items-start">
-                <div className="w-[60%]">
+              {/* 품목명 + 수량(병/보루/개) + (주류/향수 전용) 용량(ml) 배치 */}
+              <div className="flex gap-1.5 items-start">
+                <div className="flex-1 min-w-0">
                   <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                     품목명 *
                   </label>
@@ -1419,45 +1631,57 @@ export const Screen3List: React.FC = () => {
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     required
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 font-medium"
+                    className="w-full px-2.5 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 font-medium"
                   />
                 </div>
 
-                <div className="w-[40%]">
-                  <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
-                    {editCategory === 'perfume' ? '용량 *' : '수량 *'}
-                  </label>
-                  {editCategory === 'perfume' ? (
-                    <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-1.5 py-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setEditPerfumeMl(prev => Math.max(10, (prev || 50) - 10))}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 active:scale-95"
-                        title="10ml 감소"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        step="any"
-                        value={editPerfumeMl}
-                        onChange={(e) => setEditPerfumeMl(Math.max(1, parseInt(e.target.value) || 0))}
-                        className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setEditPerfumeMl(prev => (prev || 50) + 10)}
-                        className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 active:scale-95"
-                        title="10ml 증가"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                      <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold mr-0.5 shrink-0">
-                        ml
-                      </span>
+                {editCategory === 'perfume' || editCategory === 'liquor' ? (
+                  <>
+                    {/* 수량 (단위: 병) - 용량과 동일한 가로 너비 & 3자리(999) 넉넉한 크기 */}
+                    <div className="w-[78px] shrink-0">
+                      <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                        수량 *
+                      </label>
+                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={editQuantity}
+                          onChange={(e) => setEditQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+                        />
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold ml-1 shrink-0">
+                          병
+                        </span>
+                      </div>
                     </div>
-                  ) : (
+
+                    {/* 용량 (단위: ml) - 수량과 동일한 가로 너비 & 3자리(999) 넉넉한 크기 */}
+                    <div className="w-[78px] shrink-0">
+                      <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                        용량 *
+                      </label>
+                      <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <input
+                          type="number"
+                          min="1"
+                          step="any"
+                          value={editPerfumeMl}
+                          onChange={(e) => setEditPerfumeMl(Math.max(1, parseInt(e.target.value) || 0))}
+                          className="w-full text-center bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-0"
+                        />
+                        <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold ml-0.5 shrink-0">
+                          ml
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-[40%] shrink-0">
+                    <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1 truncate">
+                      수량 *
+                    </label>
                     <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-1.5 py-1.5">
                       <button
                         type="button"
@@ -1482,11 +1706,11 @@ export const Screen3List: React.FC = () => {
                         <Plus className="w-3 h-3" />
                       </button>
                       <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold mr-0.5 shrink-0">
-                        {editCategory === 'liquor' ? '병' : editCategory === 'tobacco' ? '보루' : '개'}
+                        {editCategory === 'tobacco' ? '보루' : '개'}
                       </span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1589,6 +1813,7 @@ export const Screen3List: React.FC = () => {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
@@ -1621,7 +1846,7 @@ export const Screen3List: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setShowAddReceiptChoiceModal(false);
-                  setCurrentScreen(2);
+                  directCameraInputRef.current?.click();
                 }}
                 className="w-full p-3.5 rounded-2xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 border border-blue-200/70 dark:border-blue-800/60 flex items-center gap-3 text-left transition-all active:scale-[0.98]"
               >
@@ -1659,6 +1884,26 @@ export const Screen3List: React.FC = () => {
                 </div>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 직접 카메라 촬영용 숨김 input 및 AI 분석 중 오버레이 */}
+      <input
+        ref={directCameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleDirectCameraCapture}
+        className="hidden"
+      />
+      {isDirectAnalyzing && (
+        <div className="fixed inset-0 z-[100] bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl px-6 py-5 shadow-2xl flex items-center gap-3 border border-gray-100 dark:border-gray-700">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
+            <span className="text-sm font-bold text-gray-900 dark:text-white">
+              AI가 영수증을 분석 중입니다...
+            </span>
           </div>
         </div>
       )}
