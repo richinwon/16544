@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import type { Receipt, ProductItem, ProductCategory } from '../types';
-import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER, generateFolderName, parseFolderName } from '../types';
+import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER, generateFolderName, parseFolderName, cleanStoreName } from '../types';
 import { calculateDuty } from '../utils/dutyCalculator';
 import { recognizeReceipt, compressReceiptThumbnail } from '../utils/ocrService';
 import * as XLSX from 'xlsx';
@@ -140,8 +140,9 @@ export const Screen3List: React.FC = () => {
         country: targetCountry,
         city: targetCity,
         folderName: targetFolderName,
-        storeName: parsed.storeName,
+        storeName: cleanStoreName(parsed.storeName),
         imageUrl: compactThumbnail,
+        inputType: 'ai',
         items: parsed.items,
         totalUSD: Math.round(totalUSD * 100) / 100,
         createdAt: Date.now(),
@@ -323,7 +324,7 @@ export const Screen3List: React.FC = () => {
         dataRows.push([
           folderName,
           r.date || '',
-          r.storeName || '',
+          cleanStoreName(r.storeName) || '',
           item.name || '',
           item.quantity ?? 1,
           item.currency || 'USD',
@@ -565,7 +566,7 @@ export const Screen3List: React.FC = () => {
   const refundStatus = calculateRefundStatus();
 
   return (
-    <div className="p-2.5 sm:p-3 space-y-3 pb-24">
+    <div className="p-2 sm:p-2.5 space-y-2.5 pb-24">
       {/* Top Header - 정가운데 정렬 */}
       <div className="relative flex items-center justify-center pt-1.5">
         <button
@@ -613,9 +614,9 @@ export const Screen3List: React.FC = () => {
 
       {/* Content for Tab 1: 개별 영수증 목록 (목적: 현지 사후환급 관리) */}
       {activeTab === 'individual' && (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {/* 상단 예상환급액 박스: 드롭다운이 잘리지 않도록 relative/z-30 처리 및 폰트 계층 최적화 */}
-          <div className="relative z-30 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 shadow-xs">
+          <div className="relative z-30 py-2.5 px-2.5 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 shadow-xs">
             <div className="grid grid-cols-[auto_1fr] items-center gap-2">
               {/* 좌측: 폴더 선택 박스 및 엑셀 다운로드 (드롭박스 z-index 보장) */}
               <div className="relative z-40 flex flex-col items-start gap-1 min-w-0 max-w-[170px] sm:max-w-[200px]">
@@ -650,11 +651,17 @@ export const Screen3List: React.FC = () => {
                 } ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
                   {refundStatus.amountStr}
                 </span>
-                {/* 금액 바로 아래 회색 안내 문구 영역: 미등록/불명확 국가 시 '사후환급여부 확인 필요'로 대체 */}
+                {/* 금액 바로 아래 회색 안내 문구 영역: '예상 수령액입니다.'에서 자연스러운 줄바꿈 적용 */}
                 <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right break-keep">
-                  {refundStatus.isUnknownOrNonRefundable
-                    ? '사후환급여부 확인 필요'
-                    : '평균 환급 대행수수료를 차감한 예상 수령액입니다.'}
+                  {refundStatus.isUnknownOrNonRefundable ? (
+                    '사후환급여부 확인 필요'
+                  ) : (
+                    <>
+                      평균 환급 대행수수료를 차감한
+                      <br />
+                      예상 수령액입니다.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -704,18 +711,18 @@ export const Screen3List: React.FC = () => {
                       setSelectedFolder(folderName);
                       toggleFolderCollapse(folderName);
                     }}
-                    className="p-3 bg-gray-50/70 dark:bg-gray-900/60 flex items-center justify-between cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-900 transition-colors"
+                    className="p-2.5 bg-gray-50/70 dark:bg-gray-900/60 flex items-center justify-between cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-900 transition-colors"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
+                    <div className="flex items-center gap-2">
+                      <div className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
                         isSelected 
                           ? 'bg-blue-600 text-white shadow-xs' 
                           : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
                       }`}>
                         {isCollapsed ? <Folder className="w-5 h-5" /> : <FolderOpen className="w-5 h-5" />}
                       </div>
-                      <div>
-                        <h4 className="text-sm font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-extrabold text-gray-900 dark:text-white whitespace-nowrap truncate">
                           {folderName}
                         </h4>
                         <p className="text-[11px] text-gray-400 mt-0.5">
@@ -724,7 +731,7 @@ export const Screen3List: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <div className="text-right">
                         {currencyEntries.length === 0 ? (
                           <span className="text-sm font-black text-gray-900 dark:text-white">0</span>
@@ -748,182 +755,209 @@ export const Screen3List: React.FC = () => {
 
                   {/* Folder's Receipts List (Collapsible) */}
                   {!isCollapsed && (
-                    <div className="p-2.5 space-y-2.5">
+                    <div className="p-2 space-y-2">
                       {rList.length === 0 ? (
                         <div className="py-5 text-center text-xs text-gray-400">
                           이 폴더에 등록된 영수증이 없습니다.
                         </div>
                       ) : (
-                        rList.map((receipt) => (
-                          <div 
-                            key={receipt.id}
-                            className="bg-white dark:bg-gray-800/90 rounded-2xl p-2.5 border border-gray-100 dark:border-gray-700/60 shadow-xs space-y-2"
-                          >
-                            {/* Receipt Header */}
-                            <div className="flex justify-between items-start pb-2 border-b border-gray-100 dark:border-gray-700/60">
-                              <div className="flex items-center gap-2">
-                                {receipt.imageUrl ? (
-                                  <div 
-                                    onClick={() => setSelectedReceipt(receipt)}
-                                    className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 cursor-pointer relative group flex-shrink-0 border border-gray-200 dark:border-gray-700"
-                                  >
-                                    <img src={receipt.imageUrl} alt="Receipt thumbnail" className="w-full h-full object-cover" />
-                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Eye className="w-3.5 h-3.5 text-white" />
+                        rList.map((receipt) => {
+                          const isAiExtracted =
+                            receipt.inputType === 'ai' ||
+                            (receipt.inputType !== 'manual' &&
+                              (!!receipt.imageUrl ||
+                                (receipt.id !== 'sample-receipt-1' &&
+                                  !receipt.items?.[0]?.id?.startsWith('manual-item-'))));
+
+                          return (
+                            <div 
+                              key={receipt.id}
+                              className="bg-white dark:bg-gray-800/90 rounded-2xl p-2 border border-gray-100 dark:border-gray-700/60 shadow-xs space-y-1.5"
+                            >
+                              {/* Receipt Header */}
+                              <div className="flex justify-between items-start pb-1.5 border-b border-gray-100 dark:border-gray-700/60 gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {isAiExtracted ? (
+                                    <div
+                                      onClick={() => receipt.imageUrl && setSelectedReceipt(receipt)}
+                                      title={receipt.imageUrl ? 'AI 추출 영수증 (클릭 시 원본 이미지)' : 'AI 추출 영수증'}
+                                      className={`w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border border-blue-200/70 dark:border-blue-800/60 flex items-center justify-center flex-shrink-0 font-black text-xs tracking-tight shadow-2xs ${
+                                        receipt.imageUrl ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors' : ''
+                                      }`}
+                                    >
+                                      AI
                                     </div>
+                                  ) : (
+                                    <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+                                      <ReceiptIcon className="w-4 h-4" />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <h5 className="text-xs sm:text-sm font-extrabold text-gray-900 dark:text-white truncate">
+                                      {cleanStoreName(receipt.storeName) || '상호명 미상'}
+                                    </h5>
+                                    <p className="text-[10.5px] text-gray-400 whitespace-nowrap">
+                                      {receipt.date} · 품목 {receipt.items.length}건
+                                    </p>
                                   </div>
-                                ) : (
-                                  <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
-                                    <ReceiptIcon className="w-4 h-4" />
-                                  </div>
-                                )}
-                                <div>
-                                  <h5 className="text-xs font-bold text-gray-900 dark:text-white">
-                                    {receipt.storeName || '상호명 미상'}
-                                  </h5>
-                                  <p className="text-[10px] text-gray-400">
-                                    {receipt.date} · 품목 {receipt.items.length}건
+                                </div>
+                                <div className="text-right shrink-0 whitespace-nowrap">
+                                  <span className="text-xs sm:text-sm font-extrabold text-gray-900 dark:text-white">
+                                    {receipt.items[0]?.currency || 'USD'} {receipt.items.reduce((sum, it) => sum + (it.priceLocal || 0), 0).toLocaleString()}
+                                  </span>
+                                  <p className="text-[10.5px] text-gray-400">
+                                    ≈ ${receipt.totalUSD.toFixed(1)}
                                   </p>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <span className="text-xs font-extrabold text-gray-900 dark:text-white">
-                                  {receipt.items[0]?.currency || 'USD'} {receipt.items.reduce((sum, it) => sum + (it.priceLocal || 0), 0).toLocaleString()}
-                                </span>
-                                <p className="text-[10px] text-gray-400">
-                                  ≈ ${receipt.totalUSD.toFixed(1)}
-                                </p>
-                              </div>
-                            </div>
 
-                            {/* Items in Receipt */}
-                            <div className="space-y-1.5">
-                              {receipt.items.map((item: ProductItem) => (
-                                <div 
-                                  key={item.id}
-                                  className={`flex items-center justify-between p-2 rounded-xl transition-all text-xs border ${
-                                    item.excludedFromDuty 
-                                      ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40' 
-                                      : 'bg-gray-50 dark:bg-gray-900/60 border-transparent'
-                                  }`}
-                                >
-                                  {/* 면세 한도 합산 제외 체크박스 (크기 50% 축소 + 커스텀 툴팁) */}
-                                  <div className="relative group/chk flex items-center pl-1 pr-1.5">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!item.excludedFromDuty}
-                                      onChange={() => toggleExcludeItem(receipt.id, item.id)}
-                                      className="w-2.5 h-2.5 scale-75 transform rounded text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
-                                    />
-                                    {/* 드롭다운 카드 스타일과 통일된 세련된 커스텀 툴팁 */}
-                                    <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover/chk:flex flex-col z-30 pointer-events-none whitespace-nowrap bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 text-[10px] font-bold px-2.5 py-1.5 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-150">
-                                      <div className="flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                                        <span>입국 시 면세 한도 합산 제외</span>
+                              {/* Items in Receipt */}
+                              <div className="space-y-1.5">
+                                {receipt.items.map((item: ProductItem) => {
+                                  const isForeignDecimal = !['KRW', 'JPY', 'VND', 'IDR', 'TWD'].includes(item.currency || 'USD');
+                                  const rawPrice = item.priceLocal ?? 0;
+                                  const formattedPrice = isForeignDecimal && !Number.isInteger(rawPrice)
+                                    ? rawPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                    : rawPrice.toLocaleString();
+
+                                  return (
+                                    <div 
+                                      key={item.id}
+                                      className={`p-2 rounded-xl transition-all text-xs border space-y-1 ${
+                                        item.excludedFromDuty 
+                                          ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40' 
+                                          : 'bg-gray-50 dark:bg-gray-900/60 border-transparent'
+                                      }`}
+                                    >
+                                      {/* 상단 행: 좌측 상단 [체크박스 + 품목분류] / 우측 상단 [삭제 기호] */}
+                                      <div className="flex items-center justify-between gap-1.5">
+                                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                          {/* 면세 한도 합산 제외 체크박스 */}
+                                          <div className="relative group/chk flex items-center shrink-0">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!item.excludedFromDuty}
+                                              onChange={() => toggleExcludeItem(receipt.id, item.id)}
+                                              className="w-3 h-3 scale-90 transform rounded text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+                                            />
+                                            <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover/chk:flex flex-col z-30 pointer-events-none whitespace-nowrap bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 text-[10px] font-bold px-2.5 py-1.5 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-150">
+                                              <div className="flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                <span>입국 시 면세 한도 합산 제외</span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* 좌측 상단 품목분류 배지 */}
+                                          <span className="text-[10.5px] px-1.5 py-0.5 rounded-md bg-gray-200/90 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold leading-none whitespace-nowrap">
+                                            {CATEGORY_LABELS[item.category] || item.category}
+                                          </span>
+
+                                          {item.excludedFromDuty && (
+                                            <span className="text-[10.5px] font-bold text-rose-500 whitespace-nowrap">
+                                              [면세한도 제외]
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* 우측 상단 삭제 기호 */}
+                                        <button
+                                          onClick={() => deleteItemFromReceipt(receipt.id, item.id)}
+                                          className="p-0.5 text-gray-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 shrink-0"
+                                          title="품목 삭제"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+
+                                      {/* 하단 행: 좌측 [품목명 + 우측 수량] (나머지 영역 할당) / 우측 [금액 (천만 단위·소수 둘째자리 확보) + 금액 아래 세금] */}
+                                      <div className="flex items-start justify-between gap-2 pt-0.5">
+                                        <div 
+                                          onClick={() => {
+                                            setToastMessage(null);
+                                            setEditingItemData({ receiptId: receipt.id, item });
+                                            setEditName(item.name);
+                                            setEditCategory(item.category);
+                                            setEditPriceLocal(String(item.priceLocal ?? 0));
+                                            setEditTaxLocal(String(item.taxLocal ?? 0));
+                                            setEditCurrency(item.currency || 'USD');
+                                            setEditQuantity(item.quantity || 1);
+                                            setEditPerfumeMl(
+                                              item.category === 'liquor'
+                                                ? (item.liquorMl || 750)
+                                                : (item.perfumeMl || 50)
+                                            );
+                                          }}
+                                          className="flex-1 min-w-0 cursor-pointer group flex items-center gap-1.5 flex-wrap"
+                                        >
+                                          <span className="font-extrabold text-gray-900 dark:text-gray-100 text-xs sm:text-sm group-hover:text-blue-600 dark:group-hover:text-blue-400 break-keep leading-snug inline-flex items-center gap-1">
+                                            {item.name}
+                                            <Edit2 className="w-2.5 h-2.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                          </span>
+                                          {/* 품목명 우측 수량 배지 */}
+                                          <span className="text-[10.5px] px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/50 dark:border-blue-900/40 leading-none whitespace-nowrap shrink-0">
+                                            {item.quantity || 1}
+                                            {item.category === 'tobacco'
+                                              ? '보루'
+                                              : item.category === 'perfume'
+                                              ? `병(${item.perfumeMl || 50}ml)`
+                                              : item.category === 'liquor'
+                                              ? `병(${item.liquorMl || 750}ml)`
+                                              : '개'}
+                                          </span>
+                                        </div>
+
+                                        {/* 우측 금액 및 금액 아래 세금 표시부 */}
+                                        <div className="text-right shrink-0 min-w-[108px] whitespace-nowrap">
+                                          <div className="font-extrabold text-gray-900 dark:text-white text-xs sm:text-sm leading-tight">
+                                            {item.currency || 'USD'} {formattedPrice}
+                                          </div>
+                                          <div className="text-[10.5px] text-gray-400 font-medium mt-0.5 leading-tight">
+                                            {item.taxLocal ? `세금: ${item.currency} ${item.taxLocal.toLocaleString()}` : `세금: ${item.currency} 0`}
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
+                                  );
+                                })}
+                              </div>
 
-                                  {/* 품목 정보 및 클릭 시 수정 모달 오픈 */}
-                                  <div 
-                                    onClick={() => {
-                                      setToastMessage(null);
-                                      setEditingItemData({ receiptId: receipt.id, item });
-                                      setEditName(item.name);
-                                      setEditCategory(item.category);
-                                      setEditPriceLocal(String(item.priceLocal ?? 0));
-                                      setEditTaxLocal(String(item.taxLocal ?? 0));
-                                      setEditCurrency(item.currency || 'USD');
-                                      setEditQuantity(item.quantity || 1);
-                                      setEditPerfumeMl(
-                                        item.category === 'liquor'
-                                          ? (item.liquorMl || 750)
-                                          : (item.perfumeMl || 50)
-                                      );
-                                    }}
-                                    className="flex-1 pr-2 cursor-pointer group"
-                                  >
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-bold text-gray-800 dark:text-gray-200 text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-1">
-                                        {item.name}
-                                        <Edit2 className="w-2.5 h-2.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                      </span>
-                                      <span className="text-[10.5px] px-1.5 py-0.2 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-semibold">
-                                        {CATEGORY_LABELS[item.category] || item.category}
-                                      </span>
-                                      {/* 수량 및 단위 배지 */}
-                                      <span className="text-[10.5px] px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/50 dark:border-blue-900/40">
-                                        {item.quantity || 1}
-                                        {item.category === 'tobacco'
-                                          ? '보루'
-                                          : item.category === 'perfume'
-                                          ? `병 (${item.perfumeMl || 50}ml)`
-                                          : item.category === 'liquor'
-                                          ? `병 (${item.liquorMl || 750}ml)`
-                                          : '개'}
-                                      </span>
-                                      {item.excludedFromDuty && (
-                                        <span className="text-[11px] font-bold text-rose-500">
-                                          [입국 시 면세 한도 합산 제외]
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="text-[11px] text-gray-400 mt-0.5">
-                                      {item.taxLocal ? `세금: ${item.currency} ${item.taxLocal.toLocaleString()}` : `세금: ${item.currency} 0`}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-gray-900 dark:text-white text-xs">
-                                      {item.currency || 'USD'} {(item.priceLocal ?? 0).toLocaleString()}
-                                    </span>
-                                    <button
-                                      onClick={() => deleteItemFromReceipt(receipt.id, item.id)}
-                                      className="p-1 text-gray-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                                      title="품목 삭제"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Card Footer Actions */}
-                            <div className="flex justify-between items-center pt-1 text-xs">
-                              <button
-                                onClick={() => {
-                                  setToastMessage(null);
-                                  setTargetReceiptForAdd(receipt.id);
-                                }}
-                                className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-bold hover:underline text-[11px]"
-                              >
-                                <Plus className="w-3 h-3" /> 품목 직접 추가
-                              </button>
-
-                              <div className="flex gap-2">
-                                {receipt.imageUrl && (
-                                  <button
-                                    onClick={() => setSelectedReceipt(receipt)}
-                                    className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-[10px] flex items-center gap-1"
-                                  >
-                                    <Eye className="w-3 h-3" /> 원본
-                                  </button>
-                                )}
+                              {/* Card Footer Actions */}
+                              <div className="flex justify-between items-center pt-1 text-xs">
                                 <button
                                   onClick={() => {
-                                    if (confirm('이 영수증을 삭제하시겠습니까?')) {
-                                      deleteReceipt(receipt.id);
-                                    }
+                                    setToastMessage(null);
+                                    setTargetReceiptForAdd(receipt.id);
                                   }}
-                                  className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 text-rose-600 font-semibold text-[10px]"
+                                  className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-bold hover:underline text-[11px]"
                                 >
-                                  삭제
+                                  <Plus className="w-3 h-3" /> 품목 직접 추가
                                 </button>
+
+                                <div className="flex gap-1.5">
+                                  {receipt.imageUrl && (
+                                    <button
+                                      onClick={() => setSelectedReceipt(receipt)}
+                                      className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-[10px] flex items-center gap-1"
+                                    >
+                                      <Eye className="w-3 h-3" /> 원본
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      if (confirm('이 영수증을 삭제하시겠습니까?')) {
+                                        deleteReceipt(receipt.id);
+                                      }
+                                    }}
+                                    className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 text-rose-600 font-semibold text-[10px]"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   )}
@@ -937,31 +971,37 @@ export const Screen3List: React.FC = () => {
       {/* Content for Tab 2: 날짜별 합산 목록 (목적: 한국 귀국 시 면세한도 산출/확인) */}
       {activeTab === 'byDate' && (
         <div className="space-y-3">
-          {/* 상단 컴팩트 박스: 폴더 선택 + 선택된 폴더별 구매금액 합산액 (면세 한도 합산 제외 품목 제외됨) */}
-          <div className="py-2.5 px-3.5 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-100 dark:border-blue-900/50 flex items-center justify-between">
-            <div className="flex flex-col">
-              <FolderSelect />
+          {/* 상단 컴팩트 박스: 폴더 선택 + 선택된 폴더별 구매금액 합산액 (개별영수증목록의 예상환급액 폰트 구조/크기와 동일하게 통일, 색상 유지) */}
+          <div className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-100 dark:border-blue-900/50 grid grid-cols-[auto_1fr] items-center gap-2">
+            <div className="flex flex-col min-w-0 max-w-[170px] sm:max-w-[200px]">
+              <FolderSelect className="max-w-full" />
             </div>
 
-            <div className="text-right">
-              <span className="text-[10px] font-bold text-blue-700 dark:text-blue-400 flex items-center justify-end gap-1 mb-0.5">
-                <Coins className="w-3 h-3" /> 구매금액 합계
-              </span>
-              <div className="text-sm font-black text-blue-600 dark:text-blue-400">
-                {Object.keys(folderDutyIncludedByCurrency).length === 0 ? (
-                  <span>0</span>
-                ) : (
-                  <div className="flex flex-col items-end">
-                    {Object.entries(folderDutyIncludedByCurrency).map(([curr, amt]) => (
-                      <span key={curr}>{curr} {amt.toLocaleString()}</span>
-                    ))}
+            {(() => {
+              const entries = Object.entries(folderDutyIncludedByCurrency);
+              const totalAmountStr = entries.length === 0
+                ? '0'
+                : entries.map(([curr, amt]) => `${curr} ${amt.toLocaleString()}`).join(' / ');
+              return (
+                <div className="text-right flex flex-col items-end min-w-0 pl-1 overflow-hidden">
+                  <div className="flex items-center justify-end gap-1 flex-wrap">
+                    <span className="text-[11px] sm:text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1 shrink-0">
+                      <Coins className="w-3.5 h-3.5" /> 구매금액 합계
+                    </span>
                   </div>
-                )}
-              </div>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                ≈ ${folderDutyIncludedTotalUSD.toFixed(1)} ({convertUSDToKRW(folderDutyIncludedTotalUSD).toLocaleString()}원)
-              </p>
-            </div>
+                  <span className={`font-black mt-0.5 truncate max-w-full tracking-tight leading-snug text-blue-600 dark:text-blue-400 ${
+                    totalAmountStr.length > 16
+                      ? 'text-[17px] sm:text-[19px]'
+                      : 'text-[20px] sm:text-[24px]'
+                  }`}>
+                    {totalAmountStr}
+                  </span>
+                  <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right">
+                    ≈ ${folderDutyIncludedTotalUSD.toFixed(1)} ({convertUSDToKRW(folderDutyIncludedTotalUSD).toLocaleString()}원)
+                  </p>
+                </div>
+              );
+            })()}
           </div>
 
           {/* 폴더 선택 박스와 날짜별 합계 표시부 사이 공란 안내 문구 */}
@@ -982,7 +1022,7 @@ export const Screen3List: React.FC = () => {
               return (
                 <div 
                   key={date}
-                  className="bg-white dark:bg-gray-800 rounded-3xl p-5 border border-gray-100 dark:border-gray-700 shadow-xs space-y-3"
+                  className="bg-white dark:bg-gray-800 rounded-3xl p-4 border border-gray-100 dark:border-gray-700 shadow-xs space-y-3"
                 >
                   <div className="flex justify-between items-center pb-2 border-b border-gray-100 dark:border-gray-700/60">
                     <div className="flex items-center gap-2">
@@ -1017,7 +1057,7 @@ export const Screen3List: React.FC = () => {
                                   const cLabel = CATEGORY_LABELS[it.category] || it.category;
                                   if (cLabel === cat) {
                                     matchingItems.push({
-                                      storeName: r.storeName || '상호명 미상',
+                                      storeName: cleanStoreName(r.storeName) || '상호명 미상',
                                       item: it
                                     });
                                   }
@@ -1050,18 +1090,18 @@ export const Screen3List: React.FC = () => {
 
       {/* Modal: Category Product Items Information Popup */}
       {selectedCategoryDetail && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-2 overscroll-contain">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md max-h-[88vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col">
             <div
-              className="w-full max-h-[85vh] overflow-y-auto overscroll-contain p-5 modal-scroll touch-pan-y"
+              className="w-full max-h-[88vh] overflow-y-auto overscroll-contain px-3 py-3.5 modal-scroll touch-pan-y"
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-            <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex justify-between items-center mb-2.5 pb-2 border-b border-gray-100 dark:border-gray-700">
               <div>
-                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                <span className="text-xs sm:text-sm font-extrabold text-blue-600 dark:text-blue-400 block">
                   {selectedCategoryDetail.date} · 품목 정보
                 </span>
-                <h3 className="font-extrabold text-sm text-gray-900 dark:text-white">
+                <h3 className="font-black text-base text-gray-900 dark:text-white mt-0.5">
                   {selectedCategoryDetail.category} ({selectedCategoryDetail.items.length}건)
                 </h3>
               </div>
@@ -1073,43 +1113,69 @@ export const Screen3List: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-2.5 my-2">
+            <div className="space-y-1.5 my-1.5">
               {selectedCategoryDetail.items.length === 0 ? (
                 <p className="text-center text-xs text-gray-400 py-4">등록된 상품 정보가 없습니다.</p>
               ) : (
-                selectedCategoryDetail.items.map(({ storeName, item }, idx) => (
-                  <div 
-                    key={item.id || idx}
-                    className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700/60 space-y-1.5"
-                  >
-                    {/* 매장명 품목명 순서 표시 */}
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5">
-                          <span className="text-blue-600 dark:text-blue-400">{storeName}</span>
-                          <span>{item.name}</span>
+                selectedCategoryDetail.items.map(({ storeName, item }, idx) => {
+                  const isForeignDecimal = !['KRW', 'JPY', 'VND', 'IDR', 'TWD'].includes(item.currency || 'USD');
+                  const rawPrice = item.priceLocal ?? 0;
+                  const formattedPrice = isForeignDecimal && !Number.isInteger(rawPrice)
+                    ? rawPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : rawPrice.toLocaleString();
+
+                  return (
+                    <div 
+                      key={item.id || idx}
+                      className="p-2 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700/60"
+                    >
+                      {/* 상점명 표시부(28%) / 품목명(나머지 중앙 공간) / 금액 및 세금 표시부(28%, 상점명과 동일 크기) */}
+                      <div className="flex items-start justify-between gap-1.5">
+                        {/* 좌측: 상점명 표시부 (금액 표시부와 동일한 너비 w-[28%]) */}
+                        <div className="w-[28%] shrink-0 text-left min-w-0">
+                          <span className="text-xs sm:text-sm font-extrabold text-blue-600 dark:text-blue-400 break-keep leading-tight block">
+                            {cleanStoreName(storeName)}
+                          </span>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">
-                          {item.taxLocal ? `세금: ${item.currency} ${item.taxLocal.toLocaleString()}` : `세금: ${item.currency} 0`}
+
+                        {/* 중앙: 나머지 공간 품목명 및 수량 표시 */}
+                        <div className="flex-1 min-w-0 px-1 text-left">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-xs sm:text-sm font-extrabold text-gray-900 dark:text-white break-keep leading-tight">
+                              {item.name}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/50 dark:border-blue-900/40 leading-none whitespace-nowrap shrink-0">
+                              {item.quantity || 1}
+                              {item.category === 'tobacco'
+                                ? '보루'
+                                : item.category === 'perfume'
+                                ? `병(${item.perfumeMl || 50}ml)`
+                                : item.category === 'liquor'
+                                ? `병(${item.liquorMl || 750}ml)`
+                                : '개'}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-xs font-bold text-gray-900 dark:text-white">
-                          {item.currency} {item.priceLocal?.toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          ≈ ${item.priceUSD?.toFixed(1)}
+
+                        {/* 우측: 금액 표시부 (상점명 표시부와 동일한 너비 w-[28%]) + 금액 아래 세금 표시부 */}
+                        <div className="w-[28%] shrink-0 text-right min-w-0 whitespace-nowrap">
+                          <div className="text-xs sm:text-sm font-extrabold text-gray-900 dark:text-white leading-tight truncate">
+                            {item.currency} {formattedPrice}
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-medium mt-0.5 leading-tight truncate">
+                            {item.taxLocal ? `세금: ${item.currency} ${item.taxLocal.toLocaleString()}` : `세금: ${item.currency} 0`}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             <button
               onClick={() => setSelectedCategoryDetail(null)}
-              className="mt-4 w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs"
+              className="mt-3 w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs"
             >
               확인
             </button>
@@ -1159,7 +1225,7 @@ export const Screen3List: React.FC = () => {
               </div>
               <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
                 <span className="text-gray-500">상점명</span>
-                <span className="font-bold text-gray-900 dark:text-white">{selectedReceipt.storeName}</span>
+                <span className="font-bold text-gray-900 dark:text-white">{cleanStoreName(selectedReceipt.storeName)}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
                 <span className="text-gray-500">일자</span>

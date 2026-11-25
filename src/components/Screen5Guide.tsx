@@ -74,7 +74,7 @@ export const Screen5Guide: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> 홈으로
         </button>
         <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
-          해외 사후 면세(Tax Free) 가이드
+          해외 사후 면세 가이드
         </h2>
       </div>
 

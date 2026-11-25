@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { ProductCategory, ProductItem, Receipt } from '../types';
-import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName } from '../types';
+import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName, cleanStoreName } from '../types';
 import { ChevronDown, Check, Plus, Minus, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { CustomDatePicker } from './CustomDatePicker';
 import { useScrollLock } from '../utils/useScrollLock';
@@ -219,7 +219,8 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
       country: manualCountry.trim(),
       city: manualCity.trim(),
       folderName: finalFolder,
-      storeName: manualStore ? manualStore.trim() : `${manualCity || manualCountry} 직접 입력 상점`,
+      storeName: manualStore ? cleanStoreName(manualStore) : `${manualCity || manualCountry}`,
+      inputType: 'manual',
       items: [newItem],
       totalUSD: priceUSD,
       createdAt: Date.now()

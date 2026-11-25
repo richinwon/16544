@@ -11,7 +11,7 @@ import {
   RECEIPT_RETENTION_MS
 } from '../services/firebaseService';
 import { isFirebaseConfigured } from '../firebase';
-import { generateFolderName } from '../types';
+import { generateFolderName, cleanStoreName } from '../types';
 
 interface AppContextType {
   username: string;
@@ -123,9 +123,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const activeList = (Array.isArray(parsed) ? parsed : []).filter(
           (r: any) => !isReceiptExpired(r, now)
         );
-        // Ensure every receipt has a folderName
+        // Ensure every receipt has a folderName and cleaned storeName
         return activeList.map((r: any) => ({
           ...r,
+          storeName: cleanStoreName(r.storeName),
           folderName: r.folderName || generateFolderName(r.date, r.country || '일본', r.city || '도쿄')
         }));
       } catch (e) {
@@ -139,10 +140,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       {
         id: 'sample-receipt-1',
         date: today,
-        storeName: '긴자 백화점 (도쿄)',
+        storeName: '긴자 백화점',
         country: '일본',
         city: '도쿄',
         folderName: initialFolder,
+        inputType: 'manual',
         items: [
           {
             id: 'item-1',
@@ -307,6 +309,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('dutyfree_rates', JSON.stringify(exchangeRates));
   }, [exchangeRates]);
+
+  // 앱 진입 시 실시간 API 환율 동기화 (홈화면 현황 박스와 면세리포트 환율 일치)
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+
+    fetch('https://open.er-api.com/v6/latest/USD', { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data || !data.rates) return;
+        setExchangeRates((prev) => {
+          const next = { ...prev };
+          if (typeof data.rates.KRW === 'number' && data.rates.KRW > 0) {
+            next.KRW = Math.round(data.rates.KRW * 100) / 100;
+          }
+          if (typeof data.rates.JPY === 'number' && data.rates.JPY > 0) {
+            next.JPY = Math.round(data.rates.JPY * 100) / 100;
+          }
+          if (typeof data.rates.EUR === 'number' && data.rates.EUR > 0) {
+            next.EUR = Math.round(data.rates.EUR * 10000) / 10000;
+          }
+          if (typeof data.rates.CNY === 'number' && data.rates.CNY > 0) {
+            next.CNY = Math.round(data.rates.CNY * 100) / 100;
+          }
+          return next;
+        });
+      })
+      .catch(() => {})
+      .finally(() => clearTimeout(timer));
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, []);
 
   // Dark mode toggle in html class
   useEffect(() => {

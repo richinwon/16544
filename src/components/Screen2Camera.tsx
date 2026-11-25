@@ -236,6 +236,7 @@ export const Screen2Camera: React.FC = () => {
           folderName: fixedFolderName,
           storeName: parsed.storeName,
           imageUrl: compactThumbnail,
+          inputType: 'ai',
           items: parsed.items,
           totalUSD: Math.round(totalUSD * 100) / 100,
           createdAt: Date.now() + idx
@@ -411,8 +412,16 @@ export const Screen2Camera: React.FC = () => {
         <h3 className="text-sm font-bold text-gray-800 dark:text-white">
           {isContinuousMode ? '여러 장의 영수증을 촬영합니다' : '영수증을 촬영합니다'}
         </h3>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          {isContinuousMode ? '카메라 창이 열린 상태에서 셔터를 연속으로 눌러 한 번에 추가합니다' : '카메라 아이콘을 누르면 즉시 카메라가 구동됩니다'}
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 leading-relaxed">
+          {isContinuousMode ? (
+            <>
+              카메라 창이 열린 상태에서 셔터를 연속으로 눌러
+              <br />
+              한 번에 추가합니다
+            </>
+          ) : (
+            '카메라 아이콘을 누르면 즉시 카메라가 구동됩니다'
+          )}
         </p>
 
         {/* 파일선택 버튼 */}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { cleanStoreName } from '../types';
 import { calculateDuty } from '../utils/dutyCalculator';
 import { FolderSelect } from './FolderSelect';
 import { CircularProgress } from './CircularProgress';
@@ -43,9 +44,9 @@ export const Screen1Dashboard: React.FC = () => {
 
   useScrollLock(showCurrencyModal || showColorModal || showGuideModal);
 
-  // Calculate duty based on selectedFolder's receipts
+  // Calculate duty based on selectedFolder's receipts (실시간 API 환율 기준 통일)
   const allItems = filteredReceipts.flatMap(r => r.items);
-  const duty = calculateDuty(allItems, exchangeRates?.KRW || 1380);
+  const duty = calculateDuty(allItems, exchangeRates?.KRW || 1380, exchangeRates as unknown as Partial<Record<string, number>>);
   const rawPercent = Math.round((duty.totalGeneralUSD / duty.dutyFreeLimitUSD) * 100);
   const percentUsed = Math.min(100, rawPercent);
 
@@ -343,7 +344,7 @@ export const Screen1Dashboard: React.FC = () => {
                 className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 hover:bg-gray-100 dark:hover:bg-gray-900 cursor-pointer transition-colors"
               >
                 <div>
-                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{r.storeName || '영수증 내역'}</p>
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{cleanStoreName(r.storeName) || '영수증 내역'}</p>
                   <p className="text-[11px] text-gray-400">{r.date} · 품목 {r.items.length}개</p>
                 </div>
                 <div className="text-right">
@@ -422,42 +423,42 @@ export const Screen1Dashboard: React.FC = () => {
 
       {/* Modal 3: 면세비서 100% 활용방법 안내 모달 */}
       {showGuideModal && (
-        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 overscroll-contain">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm max-h-[85vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-3 overscroll-contain">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-[440px] max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200 flex flex-col">
             <div
-              className="w-full max-h-[85vh] overflow-y-auto overscroll-contain p-6 modal-scroll touch-pan-y"
+              className="w-full max-h-[90vh] overflow-y-auto overscroll-contain p-3.5 sm:p-4 modal-scroll touch-pan-y"
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-            <div className="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex justify-between items-center pb-2.5 border-b border-gray-100 dark:border-gray-700">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 flex items-center justify-center shrink-0">
                   <HelpCircle className="w-5 h-5" />
                 </div>
-                <h3 className="font-extrabold text-base text-gray-900 dark:text-white">
+                <h3 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
                   면세비서 100% 활용하기
                 </h3>
               </div>
               <button 
                 onClick={() => setShowGuideModal(false)}
-                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400"
+                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="py-4 space-y-3.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-              <p className="font-semibold text-gray-800 dark:text-gray-100 bg-blue-50/70 dark:bg-blue-950/40 p-3 rounded-2xl border border-blue-100 dark:border-blue-900/40">
+            <div className="py-2.5 space-y-2.5 text-sm text-gray-600 dark:text-gray-300 leading-snug break-keep">
+              <p className="font-bold text-gray-800 dark:text-gray-100 bg-blue-50/70 dark:bg-blue-950/40 p-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-xs sm:text-sm leading-relaxed break-keep">
                 면세비서는 해외여행/출장 시 영수증 촬영을 통해 구매내역을 정리하고 면세한도를 체크할 수 있는 서비스입니다.<br />
                 면세비서를 통해 편리하고 스마트한 여행 하세요~!
               </p>
 
-              <div className="space-y-3 pt-1">
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
-                  <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <div className="space-y-2 pt-0.5">
+                <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
+                  <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                     구매목록 - 개별영수증목록
                   </h4>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 space-y-0.5">
+                  <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
                     영수증 건별로 정리된 내역을 확인하고 예상되는 사후 환급 세금을 확인할 수 있어요!<br />
                     여행이 아니라 출장 중이라면?<br />
                     비용 청구자료 정리 시 유용해요!<br />
@@ -465,22 +466,22 @@ export const Screen1Dashboard: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
-                  <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
+                  <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
                     구매목록 - 날짜별합산목록
                   </h4>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
                     품목분류가 적용된 날짜별 합계액을 볼 수 있어요! 입국 시 품목별 면세한도와 비교해 보세요!
                   </p>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
-                  <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
+                  <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
+                    <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0"></span>
                     면세리포트
                   </h4>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
                     자진 신고 시 VS 미신고 적발 시 세금을 미리 확인할 수 있어요!
                   </p>
                 </div>
@@ -489,7 +490,7 @@ export const Screen1Dashboard: React.FC = () => {
 
             <button
               onClick={() => setShowGuideModal(false)}
-              className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors"
+              className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition-colors"
             >
               확인 완료
             </button>
@@ -622,12 +623,12 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
   const krwAmount = Math.round(usdAmount * krwRate);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-center mb-4">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3">
+      <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-4 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-2">
             <Coins className="w-5 h-5 text-amber-500" />
-            <h3 className="font-bold text-base text-gray-900 dark:text-white">실시간 환율 변환기</h3>
+            <h3 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">실시간 환율 변환기</h3>
           </div>
           <button 
             onClick={onClose}
@@ -637,19 +638,19 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-sm font-extrabold text-gray-700 dark:text-gray-300 mb-1 block">
               금액 및 기준 통화
             </label>
-            <div className="flex gap-2 relative">
+            <div className="flex gap-1.5 relative">
               <input 
                 type="text"
                 inputMode="decimal"
                 value={displayAmount}
                 onChange={handleAmountChange}
                 onBlur={handleAmountBlur}
-                className="w-[52%] px-3 py-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-bold text-sm min-w-0"
+                className="w-[52%] px-3 py-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-black text-base min-w-0"
                 placeholder="0.00"
               />
 
@@ -658,9 +659,9 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                 <button
                   type="button"
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="w-full px-2.5 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors"
+                  className="w-full px-2.5 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-extrabold text-xs sm:text-sm text-gray-800 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors"
                 >
-                  <span className="truncate">{baseCurrency} ({CURRENCY_INFO[baseCurrency]?.symbol})</span>
+                  <span className="truncate whitespace-nowrap">{baseCurrency} ({CURRENCY_INFO[baseCurrency]?.symbol})</span>
                   <ChevronDown className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
 
@@ -691,11 +692,11 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                             }`}
                           >
                             <div className="flex items-center min-w-0 whitespace-nowrap overflow-hidden">
-                              <span className="inline-block min-w-[26px] text-left font-bold text-gray-400 dark:text-gray-500 text-[10.5px] shrink-0 whitespace-nowrap mr-1">
+                              <span className="inline-block min-w-[26px] text-left font-bold text-gray-400 dark:text-gray-500 text-xs shrink-0 whitespace-nowrap mr-1">
                                 {info.symbol}
                               </span>
-                              <span className="font-bold text-xs mr-1 shrink-0 whitespace-nowrap">{code}</span>
-                              <span className="text-[10.5px] text-gray-400 font-normal truncate">
+                              <span className="font-bold text-xs sm:text-sm mr-1 shrink-0 whitespace-nowrap">{code}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium truncate">
                                 {info.name}
                               </span>
                             </div>
@@ -708,51 +709,51 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                 )}
               </div>
             </div>
-            <p className="text-[11px] text-gray-400 mt-1 pl-1">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-1 pl-0.5">
               선택 통화: {CURRENCY_INFO[baseCurrency]?.name || baseCurrency}
             </p>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-900/60 p-4 rounded-2xl space-y-2 border border-gray-100 dark:border-gray-800">
-            <div className="flex justify-between text-xs text-gray-500 pb-1 border-b border-gray-200/60 dark:border-gray-800">
-              <span className="font-semibold text-gray-700 dark:text-gray-300">환산 결과</span>
-              <span className="text-[11px]">1 USD = {krwRate.toLocaleString()}원</span>
+          <div className="bg-gray-50 dark:bg-gray-900/60 p-3 rounded-2xl space-y-2 border border-gray-100 dark:border-gray-800">
+            <div className="flex justify-between text-sm text-gray-500 pb-1 border-b border-gray-200/60 dark:border-gray-800 whitespace-nowrap">
+              <span className="font-extrabold text-gray-800 dark:text-gray-200">환산 결과</span>
+              <span className="text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">1 USD = {krwRate.toLocaleString()}원</span>
             </div>
-            <div className="flex justify-between items-center py-1.5 border-b border-gray-200 dark:border-gray-800">
-              <div>
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 block">USD (미국 달러)</span>
-                <span className="text-[10px] text-gray-400">기준 달러 환산액</span>
+            <div className="flex justify-between items-center py-1 border-b border-gray-200 dark:border-gray-800 gap-2">
+              <div className="min-w-0">
+                <span className="text-sm font-extrabold text-gray-700 dark:text-gray-200 block whitespace-nowrap">USD (미국 달러)</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block whitespace-nowrap">기준 달러 환산액</span>
               </div>
-              <span className="text-base font-extrabold text-blue-600 dark:text-blue-400">
+              <span className="text-lg font-black text-blue-600 dark:text-blue-400 whitespace-nowrap shrink-0">
                 ${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between items-center py-1.5">
-              <div>
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 block">KRW (대한민국 원)</span>
-                <span className="text-[10px] text-gray-400">원화 환산액</span>
+            <div className="flex justify-between items-center py-1 gap-2">
+              <div className="min-w-0">
+                <span className="text-sm font-extrabold text-gray-700 dark:text-gray-200 block whitespace-nowrap">KRW (대한민국 원)</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block whitespace-nowrap">원화 환산액</span>
               </div>
-              <span className="text-base font-extrabold text-gray-900 dark:text-white">
+              <span className="text-lg font-black text-gray-900 dark:text-white whitespace-nowrap shrink-0">
                 {krwAmount.toLocaleString()}원
               </span>
             </div>
           </div>
 
-          <div className="pt-1">
-            <div className="flex justify-between items-center mb-1">
-              <p className="text-[11px] text-gray-400">환율 수동 조정 (원/달러):</p>
+          <div className="pt-0.5">
+            <div className="flex justify-between items-center mb-1 gap-1 whitespace-nowrap">
+              <p className="text-xs sm:text-sm font-bold text-gray-600 dark:text-gray-300">환율 수동 조정 (원/달러):</p>
               <button
                 type="button"
                 onClick={handleResetRates}
                 disabled={isResettingRate}
-                className="text-[11px] text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 active:scale-95 transition-transform"
+                className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 active:scale-95 transition-transform shrink-0"
                 title="실시간 매매기준율 환율 API 최신값으로 다시 가져오기"
               >
                 <RefreshCw className={`w-3 h-3 ${isResettingRate ? 'animate-spin' : ''}`} />
                 기본값 리셋 (실시간 환율)
               </button>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5 items-center">
               <input 
                 type="text"
                 inputMode="decimal"
@@ -767,12 +768,12 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                   }
                 }}
                 placeholder="1,380"
-                className="w-full text-xs px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 font-bold"
+                className="w-full text-sm px-3 py-2 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 font-extrabold min-w-0"
               />
-              <span className="text-xs self-center text-gray-500 font-bold">원/$</span>
+              <span className="text-sm self-center text-gray-600 dark:text-gray-300 font-extrabold shrink-0 whitespace-nowrap">원/$</span>
             </div>
             {resetFeedbackMsg && (
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold animate-in fade-in">
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-bold animate-in fade-in">
                 {resetFeedbackMsg}
               </p>
             )}

@@ -39,10 +39,27 @@ export interface Receipt {
   city?: string;    // 도시명 (예: 도쿄, 파리, 뉴욕 등)
   folderName: string; // 여행별 폴더명 예: '2610 일본 도쿄'
   imageUrl?: string;
+  inputType?: 'ai' | 'manual'; // 영수증 입력 방식 ('ai': AI추출, 'manual': 수기등록)
   items: ProductItem[];
   totalUSD: number;
   createdAt: number;
   expiresAt?: number; // 최초 저장일(생성일, createdAt)로부터 30일 후 만료 타임스탬프(ms)
+}
+
+/**
+ * 상점명에서 'AI자동추출', '직접입력상점' 등의 입력방식 부가 문구를 제거하고 순수 상점명만 반환합니다.
+ */
+export function cleanStoreName(name?: string): string {
+  if (!name) return '상점';
+  const cleaned = name
+    .replace(/\[?\(?AI\s*자동\s*추출\)?\]?/gi, '')
+    .replace(/\[?\(?직접\s*입력\s*상점\)?\]?/g, '')
+    .replace(/\[?\(?수기\s*입력\s*상점\)?\]?/g, '')
+    .replace(/직접\s*입력/g, '')
+    .replace(/AI\s*자동\s*추출/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return cleaned || name.trim();
 }
 
 export interface ExchangeRates {
