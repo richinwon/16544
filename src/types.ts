@@ -9,13 +9,18 @@ export type ProductCategory =
   | 'liquor'            // 주류(별도한도)
   | 'tobacco'           // 담배(별도한도)
   | 'perfume'           // 향수(별도한도)
-  | 'restaurant'        // 음식점 -
-  | 'transportation';   // 교통비 -
+  | 'restaurant'        // 식비 (기존 음식점 하위 호환) -
+  | 'food'              // 식비 (하위 호환) -
+  | 'transportation'    // 교통비 -
+  | 'accommodation'     // 숙박비 -
+  | 'activity'          // 액티비티 -
+  | 'etc';              // 기타 -
 
 export interface ProductItem {
   id: string;
   name: string;
   category: ProductCategory;
+  customCategoryText?: string; // '기타' 선택 시 직접 입력 텍스트 (최대 5자)
   priceLocal: number;
   currency: 'USD' | 'KRW' | 'JPY' | 'EUR' | 'CNY';
   priceUSD: number;
@@ -92,8 +97,11 @@ export const CATEGORY_ORDER: ProductCategory[] = [
   'luxury_watch_bag',  // 7. 고급시계 / 가방(과세가격 192만 3천원 초과시) — 45%
   'fur',               // 8. 모피제품 — 19%
   'deer_antler',       // 9. 녹용 — 21%
-  'restaurant',        // 10. 음식점 — -
+  'restaurant',        // 10. 식비 — -
   'transportation',    // 11. 교통비 — -
+  'accommodation',     // 12. 숙박비 — -
+  'activity',          // 13. 액티비티 — -
+  'etc',               // 14. 기타 — -
 ];
 
 export const CATEGORY_LABELS: Record<ProductCategory, string> = {
@@ -106,8 +114,12 @@ export const CATEGORY_LABELS: Record<ProductCategory, string> = {
   luxury_watch_bag: '고급시계 / 가방',
   fur: '모피제품',
   deer_antler: '녹용',
-  restaurant: '음식점',
+  restaurant: '식비',
+  food: '식비',
   transportation: '교통비',
+  accommodation: '숙박비',
+  activity: '액티비티',
+  etc: '기타',
   bags: '일반(화장품,가방 포함)',
 };
 
@@ -123,8 +135,51 @@ export const CATEGORY_TAX_RATES: Record<ProductCategory, number> = {
   tobacco: 0.0,
   perfume: 0.0,
   restaurant: 0.0,
+  food: 0.0,
   transportation: 0.0,
+  accommodation: 0.0,
+  activity: 0.0,
+  etc: 0.0,
 };
+
+/**
+ * 비쇼핑 5개 항목('식비', '교통비', '숙박비', '액티비티', '기타') 여부 판별 헬퍼
+ * - 면세 한도 및 과세 계산 제외, 사후환급 및 면세품목별 합산 제외에 공통 적용
+ */
+export function isNonShoppingCategory(cat?: ProductCategory | string): boolean {
+  if (!cat) return false;
+  return (
+    cat === 'restaurant' ||
+    cat === 'food' ||
+    cat === 'transportation' ||
+    cat === 'accommodation' ||
+    cat === 'activity' ||
+    cat === 'etc' ||
+    cat === '음식점' ||
+    cat === '식비' ||
+    cat === '교통비' ||
+    cat === '숙박비' ||
+    cat === '액티비티' ||
+    cat === '기타'
+  );
+}
+
+/**
+ * 품목의 화면 표시용 분류명을 반환합니다.
+ * - 기존 저장된 '음식점' 데이터도 '식비'로 호환 매핑
+ * - '기타'('etc') 선택 시 customCategoryText가 있으면 '기타(입력값)' 또는 입력값 반영
+ */
+export function getItemCategoryDisplayLabel(item: { category?: ProductCategory | string; customCategoryText?: string }): string {
+  const cat = item.category as ProductCategory;
+  if (cat === 'restaurant' || cat === 'food' || (item.category as string) === '음식점') {
+    return '식비';
+  }
+  if (cat === 'etc' || (item.category as string) === '기타') {
+    const custom = (item.customCategoryText || '').trim();
+    return custom ? `기타(${custom})` : '기타';
+  }
+  return CATEGORY_LABELS[cat] || String(item.category || '');
+}
 
 /**
  * 날짜와 국가/도시 정보를 바탕으로 폴더명을 자동 생성합니다.

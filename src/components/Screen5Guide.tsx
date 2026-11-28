@@ -4,6 +4,7 @@ import {
   ArrowLeft, 
   ExternalLink, 
   Plane, 
+  PlaneTakeoff,
   CreditCard, 
   FileCheck, 
   Stamp
@@ -65,16 +66,17 @@ export const Screen5Guide: React.FC = () => {
 
   return (
     <div className="p-2.5 sm:p-3 space-y-4 pb-24">
-      {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-1.5">
+      {/* Top Header - 모든 서브 화면 1px 오차 없이 통일 */}
+      <div className="relative flex items-center justify-center min-h-[36px] pt-1 px-16">
         <button
           onClick={() => setCurrentScreen(1)}
-          className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
+          className="absolute left-0 top-1 bottom-0 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white whitespace-nowrap shrink-0"
         >
-          <ArrowLeft className="w-4 h-4" /> 홈으로
+          <ArrowLeft className="w-4 h-4 shrink-0" /> 홈으로
         </button>
-        <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
-          해외 사후 면세 가이드
+        <h2 className="text-[15px] sm:text-base font-extrabold text-gray-900 dark:text-white flex items-center justify-center gap-1.5 whitespace-nowrap">
+          <PlaneTakeoff className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <span>해외 사후 면세 가이드</span>
         </h2>
       </div>
 

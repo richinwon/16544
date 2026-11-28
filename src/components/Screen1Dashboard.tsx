@@ -109,15 +109,15 @@ export const Screen1Dashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* '면세비서 100% 활용하기' 배너 - 반가워요 문구 바로 아래 */}
+        {/* '여행비서 100% 활용하기' 배너 - 반가워요 문구 바로 아래 */}
         <button
           onClick={() => setShowGuideModal(true)}
-          className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-200/60 dark:border-blue-900/60 hover:border-blue-400 transition-all text-left group"
+          className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-200/60 dark:border-blue-900/60 hover:border-blue-400 transition-all text-left group"
         >
           <div className="flex items-center gap-2">
-            <span className="text-xs">💡</span>
-            <span className="text-xs font-bold text-blue-700 dark:text-blue-300">
-              면세비서 100% 활용하기
+            <span className="text-sm sm:text-base">💡</span>
+            <span className="text-sm sm:text-[15px] font-extrabold text-blue-700 dark:text-blue-300">
+              여행비서 100% 활용하기
             </span>
           </div>
           <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
@@ -170,12 +170,12 @@ export const Screen1Dashboard: React.FC = () => {
           className="cursor-pointer flex items-center justify-between py-1"
         >
           <div>
-            <span className="text-xs text-blue-200/90 font-medium">일반 면세한도 소진현황</span>
+            <span className="text-xs text-blue-200/90 font-medium">일반 면세한도 현황</span>
             <div className="flex items-baseline gap-1.5 mt-1">
               <span className="text-3xl font-black tracking-tight">
                 ${duty.totalGeneralUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span className="text-xs text-blue-200 font-normal">/ $800.00</span>
+              <span className="text-xs sm:text-sm font-bold text-gray-400 dark:text-gray-500 whitespace-nowrap tracking-normal">/ $800.00</span>
             </div>
             <p className="text-xs text-blue-300/90 mt-0.5">
               ≈ 약 {convertUSDToKRW(duty.totalGeneralUSD).toLocaleString()}원
@@ -421,7 +421,7 @@ export const Screen1Dashboard: React.FC = () => {
         <CurrencyCalculatorModal onClose={() => setShowCurrencyModal(false)} />
       )}
 
-      {/* Modal 3: 면세비서 100% 활용방법 안내 모달 */}
+      {/* Modal 3: 여행비서 100% 활용방법 안내 모달 */}
       {showGuideModal && (
         <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-3 overscroll-contain">
           <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-[440px] max-h-[90vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 text-left animate-in fade-in zoom-in-95 duration-200 flex flex-col">
@@ -435,7 +435,7 @@ export const Screen1Dashboard: React.FC = () => {
                   <HelpCircle className="w-5 h-5" />
                 </div>
                 <h3 className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white">
-                  면세비서 100% 활용하기
+                  여행비서 100% 활용하기
                 </h3>
               </div>
               <button 
@@ -448,18 +448,18 @@ export const Screen1Dashboard: React.FC = () => {
 
             <div className="py-2.5 space-y-2.5 text-sm text-gray-600 dark:text-gray-300 leading-snug break-keep">
               <p className="font-bold text-gray-800 dark:text-gray-100 bg-blue-50/70 dark:bg-blue-950/40 p-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-xs sm:text-sm leading-relaxed break-keep">
-                면세비서는 해외여행/출장 시 영수증 촬영을 통해 구매내역을 정리하고 면세한도를 체크할 수 있는 서비스입니다.<br />
-                면세비서를 통해 편리하고 스마트한 여행 하세요~!
+                여행비서는 해외여행/출장 시 영수증 촬영을 통해 구매내역을 정리하고 면세한도를 체크할 수 있는 서비스입니다.<br />
+                여행비서를 통해 편리하고 스마트한 여행하세요~!
               </p>
 
               <div className="space-y-2 pt-0.5">
                 <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
                   <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                    구매목록 - 개별영수증목록
+                    구매목록 - 개별영수증
                   </h4>
                   <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
-                    영수증 건별로 정리된 내역을 확인하고 예상되는 사후 환급 세금을 확인할 수 있어요!<br />
+                    영수증 건별로 정리된 내역을 확인하고 예상되는 사후 환급액을 확인할 수 있어요!<br />
                     여행이 아니라 출장 중이라면?<br />
                     비용 청구자료 정리 시 유용해요!<br />
                     영수증만 촬영하면 손쉽게 정리하고 엑셀 다운까지 쭉쭉~!
@@ -468,17 +468,27 @@ export const Screen1Dashboard: React.FC = () => {
 
                 <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
                   <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-                    구매목록 - 날짜별합산목록
+                    <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
+                    구매목록 - 소비유형별
                   </h4>
                   <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
-                    품목분류가 적용된 날짜별 합계액을 볼 수 있어요! 입국 시 품목별 면세한도와 비교해 보세요!
+                    여행 중 지출내역을 소비 유형별로 정리해서 보여줘요!
                   </p>
                 </div>
 
                 <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
                   <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
-                    <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0"></span>
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                    구매목록 - 면세품목별
+                  </h4>
+                  <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
+                    품목분류가 적용된 품목별 합계액을 볼 수 있어요! 입국 시 품목별 면세한도와 비교해 보세요!
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800">
+                  <h4 className="font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 mb-1 text-sm">
+                    <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
                     면세리포트
                   </h4>
                   <p className="text-xs sm:text-[13px] text-gray-600 dark:text-gray-300 leading-relaxed break-keep">
@@ -659,7 +669,7 @@ const CurrencyCalculatorModal: React.FC<{ onClose: () => void }> = ({ onClose })
                 <button
                   type="button"
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="w-full px-2.5 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-extrabold text-xs sm:text-sm text-gray-800 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors"
+                  className="w-full px-2.5 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-black text-base text-gray-900 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors"
                 >
                   <span className="truncate whitespace-nowrap">{baseCurrency} ({CURRENCY_INFO[baseCurrency]?.symbol})</span>
                   <ChevronDown className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />

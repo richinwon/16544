@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import type { Receipt, ProductItem, ProductCategory } from '../types';
-import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER, generateFolderName, parseFolderName, cleanStoreName } from '../types';
+import { CATEGORY_LABELS, CATEGORY_TAX_RATES, CATEGORY_ORDER, generateFolderName, parseFolderName, cleanStoreName, isNonShoppingCategory, getItemCategoryDisplayLabel } from '../types';
 import { calculateDuty } from '../utils/dutyCalculator';
 import { recognizeReceipt, compressReceiptThumbnail } from '../utils/ocrService';
 import * as XLSX from 'xlsx';
@@ -27,7 +27,16 @@ import {
   AlertCircle,
   Minus,
   CheckCircle2,
-  Camera
+  Camera,
+  FileText,
+  PieChart,
+  ShoppingBag,
+  ArrowUpDown,
+  Utensils,
+  TrainFront,
+  BedDouble,
+  Ticket,
+  MoreHorizontal
 } from 'lucide-react';
 
 // 국가별 사후환급 신청 가능한 최소 한도 금액 기준 (14개국 공식 기준)
@@ -70,12 +79,12 @@ export const Screen3List: React.FC = () => {
     setCurrentScreen 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'individual' | 'byDate'>('individual');
+  const [activeTab, setActiveTab] = useState<'individual' | 'byConsumption' | 'byDate'>('individual');
   
   // Modal for receipt image
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
 
-  // Modal for category product items details
+  // Modal for category product items details (기존 하위호환 및 소비유형별 2단계 날짜 상세 팝업)
   const [selectedCategoryDetail, setSelectedCategoryDetail] = useState<{
     date: string;
     category: string;
@@ -84,6 +93,22 @@ export const Screen3List: React.FC = () => {
       item: ProductItem;
     }[];
   } | null>(null);
+
+  // [소비유형별] 탭(2번째 탭): 선택되어 펼쳐진 소비유형 ID, 날짜 정렬(기본 오름차순), 2단계 특정 날짜 상세 팝업
+  const [expandedConsumptionTypes, setExpandedConsumptionTypes] = useState<Record<string, boolean>>({});
+  const [consumptionDateSort, setConsumptionDateSort] = useState<Record<string, 'asc' | 'desc'>>({});
+  const [selectedConsumptionDateModal, setSelectedConsumptionDateModal] = useState<{
+    consumptionLabel: string;
+    date: string;
+    items: {
+      storeName: string;
+      item: ProductItem;
+    }[];
+  } | null>(null);
+
+  // [면세품목별] 탭(3번째 탭): 선택되어 펼쳐진 품목분류 ID 및 분류별 날짜 정렬(기본 오름차순)
+  const [expandedDutyCategories, setExpandedDutyCategories] = useState<Record<string, boolean>>({});
+  const [dutyCategoryDateSort, setDutyCategoryDateSort] = useState<Record<string, 'asc' | 'desc'>>({});
 
   // Folder collapse toggle map for Tab 1
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
@@ -167,6 +192,7 @@ export const Screen3List: React.FC = () => {
   const [targetReceiptForAdd, setTargetReceiptForAdd] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<ProductCategory>('cosmetics_general');
+  const [newItemCustomCategoryText, setNewItemCustomCategoryText] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemCurrency, setNewItemCurrency] = useState<'USD' | 'JPY' | 'KRW' | 'EUR' | 'CNY'>('USD');
   const [newItemQuantity, setNewItemQuantity] = useState<number>(1);
@@ -182,6 +208,7 @@ export const Screen3List: React.FC = () => {
   } | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<ProductCategory>('cosmetics_general');
+  const [editCustomCategoryText, setEditCustomCategoryText] = useState('');
   const [editPriceLocal, setEditPriceLocal] = useState('');
   const [editTaxLocal, setEditTaxLocal] = useState('');
   const [editCurrency, setEditCurrency] = useState<'USD' | 'JPY' | 'KRW' | 'EUR' | 'CNY'>('USD');
@@ -193,6 +220,7 @@ export const Screen3List: React.FC = () => {
   useScrollLock(
     !!selectedReceipt ||
     !!selectedCategoryDetail ||
+    !!selectedConsumptionDateModal ||
     !!targetReceiptForAdd ||
     !!editingItemData ||
     showAddReceiptChoiceModal ||
@@ -250,7 +278,7 @@ export const Screen3List: React.FC = () => {
     if (!targetReceiptForAdd) return;
 
     const price = parseFloat(newItemPrice) || 0;
-    const isTaxExcludedCategory = newItemCategory === 'restaurant' || newItemCategory === 'transportation';
+    const isTaxExcludedCategory = isNonShoppingCategory(newItemCategory);
     const priceUSD = convertCurrencyToUSD(price, newItemCurrency);
     const isPerfume = newItemCategory === 'perfume';
     const isLiquor = newItemCategory === 'liquor';
@@ -263,6 +291,7 @@ export const Screen3List: React.FC = () => {
       id: 'item-' + Date.now(),
       name: newItemName.trim(),
       category: newItemCategory,
+      customCategoryText: newItemCategory === 'etc' && newItemCustomCategoryText.trim() ? newItemCustomCategoryText.trim().slice(0, 5) : undefined,
       priceLocal: price,
       currency: newItemCurrency,
       priceUSD: priceUSD,
@@ -286,6 +315,7 @@ export const Screen3List: React.FC = () => {
 
     setTargetReceiptForAdd(null);
     setNewItemName('');
+    setNewItemCustomCategoryText('');
     setNewItemPrice('');
     setNewItemTax('');
     setNewItemQuantity(1);
@@ -313,8 +343,8 @@ export const Screen3List: React.FC = () => {
 
     rList.forEach((r) => {
       r.items.forEach((item) => {
-        const catLabel = CATEGORY_LABELS[item.category] || item.category;
-        const isTaxExcluded = item.category === 'restaurant' || item.category === 'transportation';
+        const catLabel = getItemCategoryDisplayLabel(item);
+        const isTaxExcluded = isNonShoppingCategory(item.category);
         const isSeparateLimit = item.category === 'liquor' || item.category === 'tobacco' || item.category === 'perfume';
         const taxRatePercent = isTaxExcluded || isSeparateLimit
           ? '-'
@@ -369,11 +399,11 @@ export const Screen3List: React.FC = () => {
     const dutyResult = calculateDuty(allFolderItems, exchangeRates?.KRW || 1380, exchangeRates as unknown as Partial<Record<string, number>>);
 
     const reportRows: (string | number)[][] = [
-      ['[면세비서] 면세 리포트 및 예상 세금/추징금 산출내역', ''],
+      ['[여행비서] 면세 리포트 및 예상 세금/추징금 산출내역', ''],
       ['여행 폴더명', folderName],
       ['적용 과세환율 (1 USD 기준)', `${(exchangeRates?.KRW || 1380).toLocaleString()}원`],
       ['', ''],
-      ['■ 기본 면세 한도 ($800) 현황', ''],
+      ['■ 일반 면세 한도 ($800) 현황', ''],
       ['일반 물품 구매 합계 (USD)', `$${dutyResult.totalGeneralUSD.toFixed(2)}`],
       ['일반 물품 구매 합계 (KRW)', `${convertUSDToKRW(dutyResult.totalGeneralUSD).toLocaleString()}원`],
       ['일반 물품 과세 대상 금액', `$${dutyResult.generalTaxableUSD.toFixed(2)} (${dutyResult.generalTaxableKRW.toLocaleString()}원)`],
@@ -451,48 +481,200 @@ export const Screen3List: React.FC = () => {
     folderReceiptsMap[f].push(r);
   });
 
-  // Calculate stats for Tab 2: based strictly on selectedFolder's receipts and EXCLUDING items with excludedFromDuty === true OR restaurant/transportation
-  const dateSummaryMap: Record<string, { 
-    totalUSD: number; 
-    totalPriceLocal: number;
-    currency: string;
-    categories: Record<string, number> 
-  }> = {};
-  
-  // Calculate folder-wide total purchase amount for Tab 2 header (excluding excludedFromDuty items and restaurant/transportation)
+  // ============================================================================
+  // [소비유형별] 탭 (2번째 탭) & [면세품목별] 탭 (3번째 탭) 데이터 집계 로직
+  // ============================================================================
+
+  // 화폐별 금액 포맷팅 헬퍼 (천 단위 콤마 필수 적용)
+  const formatLocalCurrencyPrice = (amount: number, currency: string = 'USD'): string => {
+    const isForeignDecimal = !['KRW', 'JPY', 'VND', 'IDR', 'TWD'].includes(currency);
+    const raw = Number(amount) || 0;
+    return isForeignDecimal && !Number.isInteger(raw)
+      ? raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : raw.toLocaleString('en-US');
+  };
+
+  // 화폐 단위(코드) 기준 줄바꿈 및 자릿수에 따른 동적 폰트 축소 렌더러
+  const renderCurrencyLines = (byCurrencyMap: Record<string, number>, textColorClass: string) => {
+    const entries = Object.entries(byCurrencyMap).filter(([, amt]) => amt > 0);
+    if (entries.length === 0) {
+      return (
+        <span className={`font-black mt-0.5 text-[20px] sm:text-[23px] leading-tight ${textColorClass}`}>
+          0
+        </span>
+      );
+    }
+    const formattedLines = entries.map(([curr, amt]) => `${curr} ${formatLocalCurrencyPrice(amt, curr)}`);
+    const maxLen = Math.max(...formattedLines.map((s) => s.length));
+    const sizeClass =
+      entries.length >= 3 || maxLen > 18
+        ? 'text-[13px] sm:text-[15px]'
+        : entries.length === 2 || maxLen > 13
+        ? 'text-[15px] sm:text-[17px]'
+        : 'text-[19px] sm:text-[22px]';
+
+    return (
+      <div className={`font-black mt-0.5 flex flex-col items-end leading-tight tracking-tight max-w-full ${sizeClass} ${textColorClass}`}>
+        {formattedLines.map((line, i) => (
+          <span key={i} className="whitespace-nowrap">
+            {line}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  // 1) [소비유형별] 탭 (2번째 탭): 쇼핑 + 비쇼핑 전체 지출내역 총 합계 및 6개 고정 카테고리 집계
+  type ConsumptionTypeKey = 'shopping' | 'food' | 'transportation' | 'accommodation' | 'activity' | 'etc';
+  const CONSUMPTION_CATEGORIES: { key: ConsumptionTypeKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { key: 'shopping', label: '쇼핑', icon: ShoppingBag },
+    { key: 'food', label: '식비', icon: Utensils },
+    { key: 'transportation', label: '교통비', icon: TrainFront },
+    { key: 'accommodation', label: '숙박비', icon: BedDouble },
+    { key: 'activity', label: '액티비티', icon: Ticket },
+    { key: 'etc', label: '기타', icon: MoreHorizontal },
+  ];
+
+  const resolveConsumptionType = (cat?: ProductCategory | string): ConsumptionTypeKey => {
+    if (cat === 'restaurant' || cat === 'food' || cat === '음식점' || cat === '식비') return 'food';
+    if (cat === 'transportation' || cat === '교통비') return 'transportation';
+    if (cat === 'accommodation' || cat === '숙박비') return 'accommodation';
+    if (cat === 'activity' || cat === '액티비티') return 'activity';
+    if (cat === 'etc' || cat === '기타') return 'etc';
+    return 'shopping';
+  };
+
+  let folderAllSpendingTotalUSD = 0;
+  const folderAllSpendingByCurrency: Record<string, number> = {};
+
+  const consumptionSummaryMap: Record<
+    ConsumptionTypeKey,
+    {
+      totalUSD: number;
+      byCurrency: Record<string, number>;
+      itemCount: number;
+      dates: Record<
+        string,
+        {
+          totalUSD: number;
+          byCurrency: Record<string, number>;
+          items: { storeName: string; item: ProductItem; date: string }[];
+        }
+      >;
+    }
+  > = {
+    shopping: { totalUSD: 0, byCurrency: {}, itemCount: 0, dates: {} },
+    food: { totalUSD: 0, byCurrency: {}, itemCount: 0, dates: {} },
+    transportation: { totalUSD: 0, byCurrency: {}, itemCount: 0, dates: {} },
+    accommodation: { totalUSD: 0, byCurrency: {}, itemCount: 0, dates: {} },
+    activity: { totalUSD: 0, byCurrency: {}, itemCount: 0, dates: {} },
+    etc: { totalUSD: 0, byCurrency: {}, itemCount: 0, dates: {} },
+  };
+
+  // 2) [면세품목별] 탭 (3번째 탭): 비쇼핑 5개 항목(숙박비, 식비, 교통비, 액티비티, 기타) 및 면세제외 항목을 제외한 쇼핑 품목분류별 집계
   let folderDutyIncludedTotalUSD = 0;
   const folderDutyIncludedByCurrency: Record<string, number> = {};
+
+  const SHOPPING_DUTY_CATEGORY_ORDER: ProductCategory[] = [
+    'liquor',
+    'tobacco',
+    'perfume',
+    'cosmetics_general',
+    'clothing_shoes',
+    'jewelry',
+    'luxury_watch_bag',
+    'fur',
+    'deer_antler',
+  ];
+
+  const dutyCategorySummaryMap: Record<
+    string,
+    {
+      catKey: ProductCategory;
+      label: string;
+      totalUSD: number;
+      byCurrency: Record<string, number>;
+      items: { date: string; storeName: string; item: ProductItem }[];
+      dates: Record<
+        string,
+        {
+          totalUSD: number;
+          byCurrency: Record<string, number>;
+          items: { storeName: string; item: ProductItem; date: string }[];
+        }
+      >;
+    }
+  > = {};
 
   filteredReceipts.forEach((r: Receipt) => {
     const d = r.date || '날짜 미상';
     const receiptCurrency = r.items[0]?.currency || 'USD';
+    const cleanStore = cleanStoreName(r.storeName) || '상호명 미상';
 
-    // We only process items not excluded from duty and not restaurant/transportation for Tab 2
     r.items.forEach((item: ProductItem) => {
-      if (item.excludedFromDuty || item.category === 'restaurant' || item.category === 'transportation') return;
+      const curr = item.currency || receiptCurrency;
+      const priceLocal = Number(item.priceLocal) || 0;
+      const priceUSD = Number(item.priceUSD) || 0;
 
-      if (!dateSummaryMap[d]) {
-        dateSummaryMap[d] = { 
-          totalUSD: 0, 
-          totalPriceLocal: 0,
-          currency: item.currency || receiptCurrency,
-          categories: {} 
+      // (A) 소비유형별 탭 전체 합산 (쇼핑 + 비쇼핑 전체)
+      folderAllSpendingTotalUSD += priceUSD;
+      folderAllSpendingByCurrency[curr] = (folderAllSpendingByCurrency[curr] || 0) + priceLocal;
+
+      const cType = resolveConsumptionType(item.category);
+      const cGroup = consumptionSummaryMap[cType];
+      cGroup.totalUSD += priceUSD;
+      cGroup.byCurrency[curr] = (cGroup.byCurrency[curr] || 0) + priceLocal;
+      cGroup.itemCount += 1;
+
+      if (!cGroup.dates[d]) {
+        cGroup.dates[d] = { totalUSD: 0, byCurrency: {}, items: [] };
+      }
+      cGroup.dates[d].totalUSD += priceUSD;
+      cGroup.dates[d].byCurrency[curr] = (cGroup.dates[d].byCurrency[curr] || 0) + priceLocal;
+      cGroup.dates[d].items.push({ storeName: cleanStore, item, date: d });
+
+      // (B) 면세품목별 탭 합산 (비쇼핑 5개 항목 및 excludedFromDuty 제외)
+      if (item.excludedFromDuty || isNonShoppingCategory(item.category)) return;
+
+      folderDutyIncludedTotalUSD += priceUSD;
+      folderDutyIncludedByCurrency[curr] = (folderDutyIncludedByCurrency[curr] || 0) + priceLocal;
+
+      // 하위호환 'bags'는 'cosmetics_general'(일반(화장품,가방 포함))로 통합
+      const normalizedCat: ProductCategory = item.category === 'bags' ? 'cosmetics_general' : item.category;
+      const catLabel = CATEGORY_LABELS[normalizedCat] || String(normalizedCat);
+
+      if (!dutyCategorySummaryMap[normalizedCat]) {
+        dutyCategorySummaryMap[normalizedCat] = {
+          catKey: normalizedCat,
+          label: catLabel,
+          totalUSD: 0,
+          byCurrency: {},
+          items: [],
+          dates: {},
         };
       }
+      const dCatGroup = dutyCategorySummaryMap[normalizedCat];
+      dCatGroup.totalUSD += priceUSD;
+      dCatGroup.byCurrency[curr] = (dCatGroup.byCurrency[curr] || 0) + priceLocal;
+      dCatGroup.items.push({
+        date: d,
+        storeName: cleanStore,
+        item,
+      });
 
-      dateSummaryMap[d].totalUSD += item.priceUSD || 0;
-      dateSummaryMap[d].totalPriceLocal += item.priceLocal || 0;
-      dateSummaryMap[d].currency = item.currency;
-
-      folderDutyIncludedTotalUSD += item.priceUSD || 0;
-      folderDutyIncludedByCurrency[item.currency] = (folderDutyIncludedByCurrency[item.currency] || 0) + (item.priceLocal || 0);
-
-      const catLabel = CATEGORY_LABELS[item.category] || item.category;
-      dateSummaryMap[d].categories[catLabel] = (dateSummaryMap[d].categories[catLabel] || 0) + item.priceUSD;
+      if (!dCatGroup.dates[d]) {
+        dCatGroup.dates[d] = { totalUSD: 0, byCurrency: {}, items: [] };
+      }
+      dCatGroup.dates[d].totalUSD += priceUSD;
+      dCatGroup.dates[d].byCurrency[curr] = (dCatGroup.dates[d].byCurrency[curr] || 0) + priceLocal;
+      dCatGroup.dates[d].items.push({ storeName: cleanStore, item, date: d });
     });
   });
 
-  const sortedDates = Object.keys(dateSummaryMap).sort().reverse();
+  // 실제 결제 내역이 존재하는 쇼핑 품목분류만 정렬하여 추출
+  const activeDutyCategoryKeys = SHOPPING_DUTY_CATEGORY_ORDER.filter(
+    (k) => dutyCategorySummaryMap[k] && dutyCategorySummaryMap[k].items.length > 0
+  );
 
   // 국가별 사후환급 기준 계산 함수 (개별영수증목록 상단 예상환급액 박스용)
   // [개편된 로직]
@@ -524,9 +706,9 @@ export const Screen3List: React.FC = () => {
     const refundByCurrency: Record<string, number> = {};
 
     rList.forEach(receipt => {
-      // 음식점, 교통비 및 KRW(원화) 통화 품목은 환급 대상에서 완전 제외
+      // 비쇼핑 5개 항목('식비', '교통비', '숙박비', '액티비티', '기타') 및 KRW(원화) 통화 품목은 환급 대상에서 완전 제외
       const eligibleItems = receipt.items.filter(
-        it => it.category !== 'restaurant' && it.category !== 'transportation' && it.currency !== 'KRW'
+        it => !isNonShoppingCategory(it.category) && it.currency !== 'KRW'
       );
       if (eligibleItems.length === 0) return;
 
@@ -566,61 +748,73 @@ export const Screen3List: React.FC = () => {
   const refundStatus = calculateRefundStatus();
 
   return (
-    <div className="p-2 sm:p-2.5 space-y-2.5 pb-24">
-      {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-1.5">
+    <div className="p-2.5 sm:p-3 space-y-2.5 pb-24">
+      {/* Top Header - 모든 서브 화면 1px 오차 없이 통일 */}
+      <div className="relative flex items-center justify-center min-h-[36px] pt-1 px-16">
         <button
           onClick={() => setCurrentScreen(1)}
-          className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
+          className="absolute left-0 top-1 bottom-0 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white whitespace-nowrap shrink-0"
         >
-          <ArrowLeft className="w-4 h-4" /> 홈으로
+          <ArrowLeft className="w-4 h-4 shrink-0" /> 홈으로
         </button>
-        <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
-          구매목록 확인 / 수정
+        <h2 className="text-[15px] sm:text-base font-extrabold text-gray-900 dark:text-white flex items-center justify-center gap-1.5 whitespace-nowrap">
+          <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span>구매목록 확인 / 수정</span>
         </h2>
         <button
           onClick={() => setShowAddReceiptChoiceModal(true)}
-          className="absolute right-0 p-1.5 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs hover:bg-blue-700 active:scale-95 transition-all"
+          className="absolute right-0 top-1 p-1.5 rounded-xl bg-blue-600 text-white text-[11px] font-bold flex items-center gap-0.5 shadow-xs hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap shrink-0"
         >
-          <Plus className="w-3.5 h-3.5" /> 영수증 추가
+          <Plus className="w-3.5 h-3.5 shrink-0" /> 영수증 추가
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="grid grid-cols-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-2xl">
+      {/* Tabs: 개별영수증 | 소비유형별 | 면세품목별 */}
+      <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-2xl">
         <button
           onClick={() => setActiveTab('individual')}
-          className={`py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+          className={`py-2 px-1 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
             activeTab === 'individual'
-              ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-xs'
+              ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
               : 'text-gray-500 dark:text-gray-400'
           }`}
         >
-          <Folder className="w-3.5 h-3.5" />
-          개별 영수증 목록
+          <Folder className="w-3.5 h-3.5 shrink-0" />
+          <span>개별영수증</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('byConsumption')}
+          className={`py-2 px-1 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
+            activeTab === 'byConsumption'
+              ? 'bg-white dark:bg-gray-700 text-[#724bb7] dark:text-[#b79cf0] shadow-xs'
+              : 'text-gray-500 dark:text-gray-400'
+          }`}
+        >
+          <PieChart className="w-3.5 h-3.5 shrink-0" />
+          <span>소비유형별</span>
         </button>
         <button
           onClick={() => setActiveTab('byDate')}
-          className={`py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+          className={`py-2 px-1 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
             activeTab === 'byDate'
               ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-xs'
               : 'text-gray-500 dark:text-gray-400'
           }`}
         >
-          <Calendar className="w-3.5 h-3.5" />
-          날짜별 합산 목록
+          <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+          <span>면세품목별</span>
         </button>
       </div>
 
-      {/* Content for Tab 1: 개별 영수증 목록 (목적: 현지 사후환급 관리) */}
+      {/* Content for Tab 1: 개별영수증 (목적: 현지 사후환급 관리 - 녹색 컨셉) */}
       {activeTab === 'individual' && (
         <div className="space-y-2.5">
-          {/* 상단 예상환급액 박스: 드롭다운이 잘리지 않도록 relative/z-30 처리 및 폰트 계층 최적화 */}
-          <div className="relative z-30 py-2.5 px-2.5 rounded-2xl bg-gradient-to-r from-blue-50/80 to-emerald-50/80 dark:from-blue-950/40 dark:to-emerald-950/40 border border-blue-100 dark:border-blue-900/50 shadow-xs">
-            <div className="grid grid-cols-[auto_1fr] items-center gap-2">
-              {/* 좌측: 폴더 선택 박스 및 엑셀 다운로드 (드롭박스 z-index 보장) */}
+          {/* 상단 예상환급액 박스: 3개 탭 모두 동일한 박스 높이(min-h-[88px]) 및 초록색(emerald) 컨셉 통일 */}
+          <div className="relative z-30 min-h-[88px] py-2.5 px-2.5 rounded-2xl bg-gradient-to-r from-emerald-50/90 to-teal-50/80 dark:from-emerald-950/40 dark:to-teal-950/30 border border-emerald-200/70 dark:border-emerald-900/50 shadow-xs flex items-center">
+            <div className="w-full grid grid-cols-[auto_1fr] items-center gap-2">
+              {/* 좌측: 폴더 선택 박스(녹색 아이콘) 및 엑셀 다운로드 */}
               <div className="relative z-40 flex flex-col items-start gap-1 min-w-0 max-w-[170px] sm:max-w-[200px]">
-                <FolderSelect className="max-w-full" />
+                <FolderSelect className="max-w-full" theme="emerald" />
                 {folders.length > 0 && (
                   <button
                     onClick={() => {
@@ -643,7 +837,6 @@ export const Screen3List: React.FC = () => {
                     <Coins className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> 예상 환급액
                   </span>
                 </div>
-                {/* 예상환급액 금액 폰트 크기 한 단계 더 확대 및 부모 박스 밖 이탈 방지 */}
                 <span className={`font-black mt-0.5 truncate max-w-full tracking-tight leading-snug ${
                   refundStatus.amountStr.length > 16
                     ? 'text-[17px] sm:text-[19px]'
@@ -651,17 +844,11 @@ export const Screen3List: React.FC = () => {
                 } ${!refundStatus.isUnknownOrNonRefundable ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>
                   {refundStatus.amountStr}
                 </span>
-                {/* 금액 바로 아래 회색 안내 문구 영역: '예상 수령액입니다.'에서 자연스러운 줄바꿈 적용 */}
-                <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right break-keep">
-                  {refundStatus.isUnknownOrNonRefundable ? (
-                    '사후환급여부 확인 필요'
-                  ) : (
-                    <>
-                      평균 환급 대행수수료를 차감한
-                      <br />
-                      예상 수령액입니다.
-                    </>
-                  )}
+                {/* 금액 바로 아래 회색 안내 문구 영역: 단일 행(한 줄)으로 표시 */}
+                <p className="text-[9px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right whitespace-nowrap tracking-tight">
+                  {refundStatus.isUnknownOrNonRefundable
+                    ? '사후환급여부 확인 필요'
+                    : '평균 환급 대행수수료를 차감한 예상 수령액입니다.'}
                 </p>
               </div>
             </div>
@@ -701,7 +888,7 @@ export const Screen3List: React.FC = () => {
                   key={folderName}
                   className={`bg-white dark:bg-gray-800 rounded-3xl border transition-all overflow-hidden ${
                     isSelected 
-                      ? 'border-blue-500/60 shadow-md ring-1 ring-blue-500/20' 
+                      ? 'border-emerald-500/60 shadow-md ring-1 ring-emerald-500/20' 
                       : 'border-gray-100 dark:border-gray-700 shadow-xs'
                   }`}
                 >
@@ -711,12 +898,12 @@ export const Screen3List: React.FC = () => {
                       setSelectedFolder(folderName);
                       toggleFolderCollapse(folderName);
                     }}
-                    className="p-2.5 bg-gray-50/70 dark:bg-gray-900/60 flex items-center justify-between cursor-pointer hover:bg-gray-100/70 dark:hover:bg-gray-900 transition-colors"
+                    className="p-2.5 bg-emerald-50/40 dark:bg-gray-900/60 flex items-center justify-between cursor-pointer hover:bg-emerald-50/70 dark:hover:bg-gray-900 transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${
                         isSelected 
-                          ? 'bg-blue-600 text-white shadow-xs' 
+                          ? 'bg-emerald-600 text-white shadow-xs' 
                           : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
                       }`}>
                         {isCollapsed ? <Folder className="w-5 h-5" /> : <FolderOpen className="w-5 h-5" />}
@@ -734,9 +921,9 @@ export const Screen3List: React.FC = () => {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div className="text-right">
                         {currencyEntries.length === 0 ? (
-                          <span className="text-sm font-black text-gray-900 dark:text-white">0</span>
+                          <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">0</span>
                         ) : (
-                          <div className="text-sm font-black text-gray-900 dark:text-white flex flex-col items-end">
+                          <div className="text-sm font-black text-emerald-600 dark:text-emerald-400 flex flex-col items-end">
                             {currencyEntries.map(([curr, amt]) => (
                               <span key={curr}>{curr} {amt.toLocaleString()}</span>
                             ))}
@@ -781,14 +968,14 @@ export const Screen3List: React.FC = () => {
                                     <div
                                       onClick={() => receipt.imageUrl && setSelectedReceipt(receipt)}
                                       title={receipt.imageUrl ? 'AI 추출 영수증 (클릭 시 원본 이미지)' : 'AI 추출 영수증'}
-                                      className={`w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 border border-blue-200/70 dark:border-blue-800/60 flex items-center justify-center flex-shrink-0 font-black text-xs tracking-tight shadow-2xs ${
-                                        receipt.imageUrl ? 'cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors' : ''
+                                      className={`w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/60 flex items-center justify-center flex-shrink-0 font-black text-xs tracking-tight shadow-2xs ${
+                                        receipt.imageUrl ? 'cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors' : ''
                                       }`}
                                     >
                                       AI
                                     </div>
                                   ) : (
-                                    <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+                                    <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
                                       <ReceiptIcon className="w-4 h-4" />
                                     </div>
                                   )}
@@ -850,7 +1037,7 @@ export const Screen3List: React.FC = () => {
 
                                           {/* 좌측 상단 품목분류 배지 */}
                                           <span className="text-[10.5px] px-1.5 py-0.5 rounded-md bg-gray-200/90 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold leading-none whitespace-nowrap">
-                                            {CATEGORY_LABELS[item.category] || item.category}
+                                            {getItemCategoryDisplayLabel(item)}
                                           </span>
 
                                           {item.excludedFromDuty && (
@@ -870,14 +1057,15 @@ export const Screen3List: React.FC = () => {
                                         </button>
                                       </div>
 
-                                      {/* 하단 행: 좌측 [품목명 + 우측 수량] (나머지 영역 할당) / 우측 [금액 (천만 단위·소수 둘째자리 확보) + 금액 아래 세금] */}
+                                      {/* 하단 행: 좌측 [품목명 + 바로 아래 줄 수량] / 우측 [금액 + 금액 아래 세금] */}
                                       <div className="flex items-start justify-between gap-2 pt-0.5">
                                         <div 
                                           onClick={() => {
                                             setToastMessage(null);
                                             setEditingItemData({ receiptId: receipt.id, item });
                                             setEditName(item.name);
-                                            setEditCategory(item.category);
+                                            setEditCategory(item.category === 'food' ? 'restaurant' : item.category);
+                                            setEditCustomCategoryText(item.customCategoryText || '');
                                             setEditPriceLocal(String(item.priceLocal ?? 0));
                                             setEditTaxLocal(String(item.taxLocal ?? 0));
                                             setEditCurrency(item.currency || 'USD');
@@ -888,15 +1076,15 @@ export const Screen3List: React.FC = () => {
                                                 : (item.perfumeMl || 50)
                                             );
                                           }}
-                                          className="flex-1 min-w-0 cursor-pointer group flex items-center gap-1.5 flex-wrap"
+                                          className="flex-1 min-w-0 cursor-pointer group flex flex-col items-start gap-1"
                                         >
-                                          <span className="font-extrabold text-gray-900 dark:text-gray-100 text-xs sm:text-sm group-hover:text-blue-600 dark:group-hover:text-blue-400 break-keep leading-snug inline-flex items-center gap-1">
+                                          <span className="font-extrabold text-gray-900 dark:text-gray-100 text-xs sm:text-sm group-hover:text-emerald-600 dark:group-hover:text-emerald-400 break-keep leading-snug inline-flex items-center gap-1">
                                             {item.name}
                                             <Edit2 className="w-2.5 h-2.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                                           </span>
-                                          {/* 품목명 우측 수량 배지 */}
-                                          <span className="text-[10.5px] px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold border border-blue-200/50 dark:border-blue-900/40 leading-none whitespace-nowrap shrink-0">
-                                            {item.quantity || 1}
+                                          {/* 품목명 바로 아래 줄 수량 배지 */}
+                                          <span className="text-[10.5px] px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 font-bold border border-emerald-200/60 dark:border-emerald-900/40 leading-none whitespace-nowrap shrink-0">
+                                            수량: {item.quantity || 1}
                                             {item.category === 'tobacco'
                                               ? '보루'
                                               : item.category === 'perfume'
@@ -929,7 +1117,7 @@ export const Screen3List: React.FC = () => {
                                     setToastMessage(null);
                                     setTargetReceiptForAdd(receipt.id);
                                   }}
-                                  className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-bold hover:underline text-[11px]"
+                                  className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold hover:underline text-[11px]"
                                 >
                                   <Plus className="w-3 h-3" /> 품목 직접 추가
                                 </button>
@@ -968,138 +1156,487 @@ export const Screen3List: React.FC = () => {
         </div>
       )}
 
-      {/* Content for Tab 2: 날짜별 합산 목록 (목적: 한국 귀국 시 면세한도 산출/확인) */}
-      {activeTab === 'byDate' && (
-        <div className="space-y-3">
-          {/* 상단 컴팩트 박스: 폴더 선택 + 선택된 폴더별 구매금액 합산액 (개별영수증목록의 예상환급액 폰트 구조/크기와 동일하게 통일, 색상 유지) */}
-          <div className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-100 dark:border-blue-900/50 grid grid-cols-[auto_1fr] items-center gap-2">
-            <div className="flex flex-col min-w-0 max-w-[170px] sm:max-w-[200px]">
-              <FolderSelect className="max-w-full" />
-            </div>
+      {/* Content for Tab 2: 소비유형별 (2번째 탭 - 쇼핑 + 비쇼핑 6대 소비유형 총합 및 2단계 드릴다운) */}
+      {activeTab === 'byConsumption' && (
+        <div className="space-y-2.5">
+          {/* 상단 폴더 선택 박스: [개별영수증] 화면의 폴더 선택 박스와 동일한 높이(min-h-[88px]) 및 부드러운 보라색 포인트 */}
+          <div className="relative z-30 min-h-[88px] py-2.5 px-2.5 rounded-2xl bg-gradient-to-r from-[#f3effd] to-[#ebe4fa] dark:from-[#2c2147]/70 dark:to-[#221938]/70 border border-[#d6c8f5] dark:border-[#4b3878] shadow-xs flex items-center">
+            <div className="w-full grid grid-cols-[auto_1fr] items-center gap-2">
+              <div className="relative z-40 flex flex-col items-start min-w-0 max-w-[170px] sm:max-w-[200px]">
+                <FolderSelect className="max-w-full" theme="purple" />
+              </div>
 
-            {(() => {
-              const entries = Object.entries(folderDutyIncludedByCurrency);
-              const totalAmountStr = entries.length === 0
-                ? '0'
-                : entries.map(([curr, amt]) => `${curr} ${amt.toLocaleString()}`).join(' / ');
-              return (
-                <div className="text-right flex flex-col items-end min-w-0 pl-1 overflow-hidden">
-                  <div className="flex items-center justify-end gap-1 flex-wrap">
-                    <span className="text-[11px] sm:text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1 shrink-0">
-                      <Coins className="w-3.5 h-3.5" /> 구매금액 합계
-                    </span>
-                  </div>
-                  <span className={`font-black mt-0.5 truncate max-w-full tracking-tight leading-snug text-blue-600 dark:text-blue-400 ${
-                    totalAmountStr.length > 16
-                      ? 'text-[17px] sm:text-[19px]'
-                      : 'text-[20px] sm:text-[24px]'
-                  }`}>
-                    {totalAmountStr}
+              <div className="text-right flex flex-col items-end min-w-0 pl-1 overflow-hidden">
+                <div className="flex items-center justify-end gap-1 flex-wrap">
+                  <span className="text-[11px] sm:text-xs font-bold text-[#6741ac] dark:text-[#bfa6f5] flex items-center gap-1 shrink-0">
+                    <Coins className="w-3.5 h-3.5 text-[#724bb7] dark:text-[#b79cf0]" /> 총 지출 합계
                   </span>
-                  <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right">
-                    ≈ ${folderDutyIncludedTotalUSD.toFixed(1)} ({convertUSDToKRW(folderDutyIncludedTotalUSD).toLocaleString()}원)
-                  </p>
                 </div>
-              );
-            })()}
+                {renderCurrencyLines(folderAllSpendingByCurrency, 'text-[#6741ac] dark:text-[#c9b3f9]')}
+                <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right whitespace-nowrap">
+                  ≈ ${folderAllSpendingTotalUSD.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ({convertUSDToKRW(folderAllSpendingTotalUSD).toLocaleString()}원)
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* 폴더 선택 박스와 날짜별 합계 표시부 사이 공란 안내 문구 */}
           <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300 px-1 text-left">
-            음식점/교통비를 제외한 물품 구매목록만 합산됩니다.
+            쇼핑 및 비쇼핑(식비·교통비·숙박비·액티비티·기타) 전체 지출내역이 합산됩니다.
           </p>
 
-          {/* Date summary cards */}
-          {sortedDates.length === 0 ? (
+          {/* 6가지 소비유형 고정 순서 노출 (1.쇼핑 2.식비 3.교통비 4.숙박비 5.액티비티 6.기타) */}
+          <div className="space-y-2">
+            {CONSUMPTION_CATEGORIES.map(({ key, label, icon: CategoryIcon }) => {
+              const group = consumptionSummaryMap[key];
+              const isExpanded = !!expandedConsumptionTypes[key];
+              const sortOrder = consumptionDateSort[key] || 'asc'; // 기본 날짜 오름차순(과거->최신)
+              const dateKeys = Object.keys(group.dates).sort((a, b) =>
+                sortOrder === 'asc' ? a.localeCompare(b) : b.localeCompare(a)
+              );
+              const currEntries = Object.entries(group.byCurrency).filter(([, amt]) => amt > 0);
+
+              return (
+                <div
+                  key={key}
+                  className={`bg-white dark:bg-gray-800 rounded-3xl border transition-all overflow-hidden ${
+                    isExpanded
+                      ? 'border-[#9e82d9]/80 dark:border-[#795bb8]/70 shadow-sm ring-1 ring-[#724bb7]/15'
+                      : 'border-gray-100 dark:border-gray-700 shadow-xs'
+                  }`}
+                >
+                  {/* 소비유형 헤더 (클릭 시 1단계 날짜별 합산 드롭다운 토글) */}
+                  <div
+                    onClick={() =>
+                      setExpandedConsumptionTypes((prev) => ({
+                        ...prev,
+                        [key]: !prev[key],
+                      }))
+                    }
+                    className="p-3 sm:p-3.5 flex items-center justify-between cursor-pointer hover:bg-[#f6f3fd] dark:hover:bg-[#2a2042]/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-8 h-8 rounded-xl bg-[#ebe4fa] dark:bg-[#382a59] text-[#6741ac] dark:text-[#c9b3f9] flex items-center justify-center shrink-0">
+                        <CategoryIcon className="w-4 h-4" />
+                      </span>
+                      <div className="min-w-0 text-left">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-sm font-extrabold text-gray-900 dark:text-white truncate">
+                            {label}
+                          </h4>
+                          <span className="text-[10.5px] font-bold px-1.5 py-0.2 rounded-md bg-[#f1ecfc] dark:bg-[#332652] text-[#724bb7] dark:text-[#bfa6f5] shrink-0">
+                            {group.itemCount}건
+                          </span>
+                          {group.itemCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConsumptionDateSort((prev) => ({
+                                  ...prev,
+                                  [key]: sortOrder === 'asc' ? 'desc' : 'asc',
+                                }));
+                                if (!isExpanded) {
+                                  setExpandedConsumptionTypes((prev) => ({
+                                    ...prev,
+                                    [key]: true,
+                                  }));
+                                }
+                              }}
+                              title={sortOrder === 'asc' ? '날짜 오름차순(과거→최신)' : '날짜 내림차순(최신→과거)'}
+                              className="p-1 rounded-md bg-[#f1ecfc] hover:bg-[#e4dbfa] dark:bg-[#332652] dark:hover:bg-[#423268] text-[#724bb7] dark:text-[#bfa6f5] border border-[#d6c8f5] dark:border-[#4b3878] flex items-center justify-center shrink-0 active:scale-95 transition-all"
+                            >
+                              <ArrowUpDown className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[10.5px] text-gray-400 mt-0.5">
+                          {group.itemCount > 0 ? '클릭하여 날짜별 합산 보기' : '등록된 지출 내역 없음'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="text-right">
+                        {currEntries.length === 0 ? (
+                          <span className="text-sm font-black text-gray-400 dark:text-gray-500">0</span>
+                        ) : (
+                          <div className="text-sm font-black text-[#6741ac] dark:text-[#c9b3f9] flex flex-col items-end leading-tight">
+                            {currEntries.map(([curr, amt]) => (
+                              <span key={curr} className="whitespace-nowrap">
+                                {curr} {formatLocalCurrencyPrice(amt, curr)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">
+                          ≈ ${group.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ({convertUSDToKRW(group.totalUSD).toLocaleString()}원)
+                        </p>
+                      </div>
+                      <div className="text-gray-400">
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 1단계 드릴다운: 날짜별 합산액 리스트 */}
+                  {isExpanded && (
+                    <div className="px-3 pb-3 pt-2 bg-[#f7f4fe]/80 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700/60 space-y-1.5">
+                      {dateKeys.length === 0 ? (
+                        <p className="text-center text-xs text-gray-400 py-3">
+                          해당 소비유형에 등록된 지출 내역이 없습니다.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {dateKeys.map((dateStr) => {
+                            const dInfo = group.dates[dateStr];
+                            const dCurrEntries = Object.entries(dInfo.byCurrency);
+                            return (
+                              <div
+                                key={dateStr}
+                                onClick={() =>
+                                  setSelectedConsumptionDateModal({
+                                    consumptionLabel: label,
+                                    date: dateStr,
+                                    items: dInfo.items,
+                                  })
+                                }
+                                className="p-2.5 rounded-2xl bg-white dark:bg-gray-800 hover:bg-[#f3effd] dark:hover:bg-[#2a2042]/60 border border-gray-100 dark:border-gray-700/70 hover:border-[#b79cf0] dark:hover:border-[#5e4694] cursor-pointer transition-all flex items-center justify-between gap-2"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Calendar className="w-3.5 h-3.5 text-[#724bb7] dark:text-[#b79cf0] shrink-0" />
+                                  <span className="text-xs font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
+                                    {dateStr}
+                                  </span>
+                                  <span className="text-[10.5px] text-[#724bb7] dark:text-[#bfa6f5] font-bold bg-[#f1ecfc] dark:bg-[#332652] px-1.5 py-0.2 rounded">
+                                    {dInfo.items.length}건
+                                  </span>
+                                </div>
+
+                                <div className="text-right shrink-0">
+                                  <div className="text-xs sm:text-sm font-black text-gray-900 dark:text-white flex flex-col items-end leading-tight">
+                                    {dCurrEntries.map(([curr, amt]) => (
+                                      <span key={curr} className="whitespace-nowrap">
+                                        {curr} {formatLocalCurrencyPrice(amt, curr)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">
+                                    ≈ ${dInfo.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Content for Tab 3: 면세품목별 (기존 '날짜별 합산목록' 전면 개편 - 품목분류별 합산 → 클릭 시 일자별 내역) */}
+      {activeTab === 'byDate' && (
+        <div className="space-y-2.5">
+          {/* 상단 여행폴더 선택 박스: [개별영수증] 탭의 폴더 선택 박스와 동일한 높이(min-h-[88px]) 및 화폐 단위 줄바꿈/자동 폰트 축소 */}
+          <div className="relative z-30 min-h-[88px] py-2.5 px-2.5 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/40 dark:to-indigo-950/40 border border-blue-100 dark:border-blue-900/50 shadow-xs flex items-center">
+            <div className="w-full grid grid-cols-[auto_1fr] items-center gap-2">
+              <div className="relative z-40 flex flex-col items-start min-w-0 max-w-[170px] sm:max-w-[200px]">
+                <FolderSelect className="max-w-full" theme="blue" />
+              </div>
+
+              <div className="text-right flex flex-col items-end min-w-0 pl-1 overflow-hidden">
+                <div className="flex items-center justify-end gap-1 flex-wrap">
+                  <span className="text-[11px] sm:text-xs font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1 shrink-0">
+                    <Coins className="w-3.5 h-3.5" /> 구매내역 합계
+                  </span>
+                </div>
+                {renderCurrencyLines(folderDutyIncludedByCurrency, 'text-blue-600 dark:text-blue-400')}
+                <p className="text-[9.5px] sm:text-[10px] text-gray-500 dark:text-gray-400 font-medium mt-0.5 leading-tight text-right whitespace-nowrap">
+                  ≈ ${folderDutyIncludedTotalUSD.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ({convertUSDToKRW(folderDutyIncludedTotalUSD).toLocaleString()}원)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 하단 안내 문구 */}
+          <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300 px-1 text-left">
+            물품 구매 금액만 합산됩니다.
+          </p>
+
+          {/* 품목분류별 합산 카드 리스트 (실제 결제 내역이 존재하는 쇼핑 품목분류만 노출) */}
+          {activeDutyCategoryKeys.length === 0 ? (
             <div className="p-8 text-center bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700">
               <p className="text-sm font-bold text-gray-600 dark:text-gray-300">
-                선택된 폴더({selectedFolder})에 합산할 데이터가 없습니다.
+                선택된 폴더({selectedFolder})에 합산할 물품 구매 데이터가 없습니다.
               </p>
             </div>
           ) : (
-            sortedDates.map((date) => {
-              const summary = dateSummaryMap[date];
-              return (
-                <div 
-                  key={date}
-                  className="bg-white dark:bg-gray-800 rounded-3xl p-4 border border-gray-100 dark:border-gray-700 shadow-xs space-y-3"
-                >
-                  <div className="flex justify-between items-center pb-2 border-b border-gray-100 dark:border-gray-700/60">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      <h4 className="text-sm font-extrabold text-gray-900 dark:text-white">{date}</h4>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-base font-black text-blue-600 dark:text-blue-400">
-                        {summary.currency} {summary.totalPriceLocal.toLocaleString()}
-                      </span>
-                      <p className="text-[10px] text-gray-400">
-                        ≈ ${summary.totalUSD.toFixed(1)} ({convertUSDToKRW(summary.totalUSD).toLocaleString()}원)
-                      </p>
-                    </div>
-                  </div>
+            <div className="space-y-2.5">
+              {activeDutyCategoryKeys.map((catKey) => {
+                const catGroup = dutyCategorySummaryMap[catKey];
+                const isExpanded = !!expandedDutyCategories[catKey];
+                const sortOrder = dutyCategoryDateSort[catKey] || 'asc'; // 기본 날짜 오름차순(과거->최신)
+                const dateKeys = Object.keys(catGroup.dates).sort((a, b) =>
+                  sortOrder === 'asc' ? a.localeCompare(b) : b.localeCompare(a)
+                );
+                const currEntries = Object.entries(catGroup.byCurrency).filter(([, amt]) => amt > 0);
 
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="text-xs font-semibold text-gray-500">품목 분류별 결제액</p>
-                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">항목 클릭 시 상품 정보</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {Object.entries(summary.categories).map(([cat, amount]) => (
-                        <div 
-                          key={cat} 
-                          onClick={() => {
-                            const matchingItems: { storeName: string; item: ProductItem }[] = [];
-                            filteredReceipts.forEach((r) => {
-                              if ((r.date || '날짜 미상') === date) {
-                                r.items.forEach((it) => {
-                                  if (it.excludedFromDuty || it.category === 'restaurant' || it.category === 'transportation') return;
-                                  const cLabel = CATEGORY_LABELS[it.category] || it.category;
-                                  if (cLabel === cat) {
-                                    matchingItems.push({
-                                      storeName: cleanStoreName(r.storeName) || '상호명 미상',
-                                      item: it
-                                    });
+                return (
+                  <div
+                    key={catKey}
+                    className={`bg-white dark:bg-gray-800 rounded-3xl border transition-all overflow-hidden ${
+                      isExpanded
+                        ? 'border-blue-400/70 dark:border-blue-500/60 shadow-sm ring-1 ring-blue-500/15'
+                        : 'border-gray-100 dark:border-gray-700 shadow-xs'
+                    }`}
+                  >
+                    {/* 품목분류 카드 헤더: 좌우 여백 축소 및 우측 금액을 최대한 우측 끝으로 배치하여 '일반(화장품,가방 포함)' 우측에 건수·정렬버튼이 한 줄로 표시되도록 확보 */}
+                    <div
+                      onClick={() =>
+                        setExpandedDutyCategories((prev) => ({
+                          ...prev,
+                          [catKey]: !prev[catKey],
+                        }))
+                      }
+                      className="px-2.5 py-3 flex items-center justify-between cursor-pointer hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-colors gap-1"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 shrink-0" />
+                        <div className="min-w-0 text-left flex-1">
+                          <div className="flex items-center gap-1 flex-nowrap">
+                            <h4 className="text-[13px] sm:text-sm font-extrabold text-gray-900 dark:text-white tracking-tight whitespace-nowrap truncate">
+                              {catGroup.label}
+                            </h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 shrink-0 whitespace-nowrap">
+                              {catGroup.items.length}건
+                            </span>
+                            {catGroup.items.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDutyCategoryDateSort((prev) => ({
+                                    ...prev,
+                                    [catKey]: sortOrder === 'asc' ? 'desc' : 'asc',
+                                  }));
+                                  if (!isExpanded) {
+                                    setExpandedDutyCategories((prev) => ({
+                                      ...prev,
+                                      [catKey]: true,
+                                    }));
                                   }
-                                });
-                              }
-                            });
-                            setSelectedCategoryDetail({
-                              date,
-                              category: cat,
-                              items: matchingItems
-                            });
-                          }}
-                          className="flex justify-between items-center text-xs p-2.5 rounded-xl bg-gray-50 hover:bg-blue-50/70 dark:bg-gray-900/50 dark:hover:bg-blue-950/40 cursor-pointer transition-colors border border-transparent hover:border-blue-200 dark:hover:border-blue-800"
-                        >
-                          <span className="text-gray-700 dark:text-gray-300 font-medium flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                            {cat}
-                          </span>
-                          <span className="font-bold text-gray-900 dark:text-white">${amount.toFixed(1)}</span>
+                                }}
+                                title={sortOrder === 'asc' ? '날짜 오름차순(과거→최신)' : '날짜 내림차순(최신→과거)'}
+                                className="p-1 rounded-md bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/70 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/70 flex items-center justify-center shrink-0 active:scale-95 transition-all"
+                              >
+                                <ArrowUpDown className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[10.5px] text-gray-400 mt-0.5">
+                            클릭하여 날짜별 합산 보기
+                          </p>
                         </div>
-                      ))}
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0 pl-1">
+                        <div className="text-right">
+                          <div className="text-sm sm:text-base font-black text-blue-600 dark:text-blue-400 flex flex-col items-end leading-tight">
+                            {currEntries.map(([curr, amt]) => (
+                              <span key={curr} className="whitespace-nowrap">
+                                {curr} {formatLocalCurrencyPrice(amt, curr)}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">
+                            ≈ ${catGroup.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ({convertUSDToKRW(catGroup.totalUSD).toLocaleString()}원)
+                          </p>
+                        </div>
+                        <div className="text-gray-400 -mr-0.5">
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* 1단계 드릴다운: 날짜별 합산액 리스트 (특정 날짜 클릭 시 2단계 상세 내역 팝업 오픈) */}
+                    {isExpanded && (
+                      <div className="px-2.5 pb-2.5 pt-2 bg-blue-50/30 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700/60 space-y-1.5">
+                        {dateKeys.map((dateStr) => {
+                          const dInfo = catGroup.dates[dateStr];
+                          const dCurrEntries = Object.entries(dInfo.byCurrency);
+                          return (
+                            <div
+                              key={dateStr}
+                              onClick={() =>
+                                setSelectedCategoryDetail({
+                                  date: dateStr,
+                                  category: catGroup.label,
+                                  items: dInfo.items,
+                                })
+                              }
+                              className="p-2.5 rounded-2xl bg-white dark:bg-gray-800 hover:bg-blue-50/70 dark:hover:bg-blue-950/30 border border-gray-100 dark:border-gray-700/70 hover:border-blue-300 dark:hover:border-blue-700 cursor-pointer transition-all flex items-center justify-between gap-2"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                <span className="text-xs font-extrabold text-gray-900 dark:text-white whitespace-nowrap">
+                                  {dateStr}
+                                </span>
+                                <span className="text-[10.5px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.2 rounded">
+                                  {dInfo.items.length}건
+                                </span>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="text-xs sm:text-sm font-black text-gray-900 dark:text-white flex flex-col items-end leading-tight">
+                                  {dCurrEntries.map(([curr, amt]) => (
+                                    <span key={curr} className="whitespace-nowrap">
+                                      {curr} {formatLocalCurrencyPrice(amt, curr)}
+                                    </span>
+                                  ))}
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">
+                                  ≈ ${dInfo.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
       )}
 
-      {/* Modal: Category Product Items Information Popup */}
+      {/* Modal: [소비유형별] 2단계 특정 날짜 선택 시 상세 내역 팝업 (상점명 / 품목명 / 결제액 3컬럼 정렬) */}
+      {selectedConsumptionDateModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-2 overscroll-contain"
+          onClick={() => setSelectedConsumptionDateModal(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md max-h-[88vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col animate-in fade-in zoom-in-95"
+          >
+            <div
+              className="w-full max-h-[88vh] overflow-y-auto overscroll-contain px-3 py-3.5 modal-scroll touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="flex justify-between items-center mb-2.5 pb-2 border-b border-gray-100 dark:border-gray-700">
+                <div className="text-left">
+                  <span className="text-xs sm:text-sm font-extrabold text-[#6741ac] dark:text-[#c9b3f9] block">
+                    {selectedConsumptionDateModal.date} · {selectedConsumptionDateModal.consumptionLabel} 상세내역
+                  </span>
+                  <h3 className="font-black text-base text-gray-900 dark:text-white mt-0.5">
+                    {selectedConsumptionDateModal.consumptionLabel} ({selectedConsumptionDateModal.items.length}건)
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedConsumptionDateModal(null)}
+                  className="p-1 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* 컬럼 헤더: 상점명 / 품목명 / 결제액 */}
+              <div className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700/60">
+                <span className="w-[28%] shrink-0 text-left">상점명</span>
+                <span className="flex-1 text-left px-1">품목명</span>
+                <span className="w-[28%] shrink-0 text-right">결제액</span>
+              </div>
+
+              <div className="space-y-1.5 my-1.5">
+                {selectedConsumptionDateModal.items.map(({ storeName, item }, idx) => {
+                  const formattedPrice = formatLocalCurrencyPrice(item.priceLocal ?? 0, item.currency || 'USD');
+                  return (
+                    <div
+                      key={item.id || idx}
+                      className="p-2 rounded-2xl bg-gray-50 dark:bg-gray-900/60 border border-gray-100 dark:border-gray-700/60"
+                    >
+                      <div className="flex items-start justify-between gap-1.5">
+                        {/* 좌측: 상점명 */}
+                        <div className="w-[28%] shrink-0 text-left min-w-0">
+                          <span className="text-xs sm:text-sm font-extrabold text-[#6741ac] dark:text-[#c9b3f9] break-keep leading-tight block">
+                            {cleanStoreName(storeName)}
+                          </span>
+                        </div>
+
+                        {/* 중앙: 품목명 및 수량 */}
+                        <div className="flex-1 min-w-0 px-1 text-left">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-xs sm:text-sm font-extrabold text-gray-900 dark:text-white break-keep leading-tight">
+                              {item.name}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#f1ecfc] dark:bg-[#332652] text-[#6741ac] dark:text-[#c9b3f9] font-bold border border-[#d6c8f5] dark:border-[#4b3878] leading-none whitespace-nowrap shrink-0">
+                              {item.quantity || 1}
+                              {item.category === 'tobacco'
+                                ? '보루'
+                                : item.category === 'perfume'
+                                ? `병(${item.perfumeMl || 50}ml)`
+                                : item.category === 'liquor'
+                                ? `병(${item.liquorMl || 750}ml)`
+                                : '개'}
+                            </span>
+                          </div>
+                          {item.category === 'etc' && item.customCategoryText && (
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400 font-semibold block mt-0.5">
+                              분류: {getItemCategoryDisplayLabel(item)}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* 우측: 결제액 (천 단위 콤마 표기) */}
+                        <div className="w-[28%] shrink-0 text-right min-w-0 whitespace-nowrap">
+                          <div className="text-xs sm:text-sm font-extrabold text-gray-900 dark:text-white leading-tight truncate">
+                            {item.currency} {formattedPrice}
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-medium mt-0.5 leading-tight truncate">
+                            ≈ ${(item.priceUSD || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => setSelectedConsumptionDateModal(null)}
+                className="mt-3 w-full py-2.5 rounded-2xl bg-[#724bb7] hover:bg-[#613da3] text-white font-bold text-xs shadow-xs transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: [면세품목별] 2단계 특정 날짜 선택 시 상세 내역 팝업 (상점명 / 품목명 / 결제액 3컬럼 정렬) */}
       {selectedCategoryDetail && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-2 overscroll-contain">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md max-h-[88vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col">
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-2 overscroll-contain"
+          onClick={() => setSelectedCategoryDetail(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md max-h-[88vh] overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col animate-in fade-in zoom-in-95"
+          >
             <div
               className="w-full max-h-[88vh] overflow-y-auto overscroll-contain px-3 py-3.5 modal-scroll touch-pan-y"
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
             <div className="flex justify-between items-center mb-2.5 pb-2 border-b border-gray-100 dark:border-gray-700">
-              <div>
+              <div className="text-left">
                 <span className="text-xs sm:text-sm font-extrabold text-blue-600 dark:text-blue-400 block">
-                  {selectedCategoryDetail.date} · 품목 정보
+                  {selectedCategoryDetail.date} · {selectedCategoryDetail.category} 상세내역
                 </span>
                 <h3 className="font-black text-base text-gray-900 dark:text-white mt-0.5">
                   {selectedCategoryDetail.category} ({selectedCategoryDetail.items.length}건)
@@ -1111,6 +1648,13 @@ export const Screen3List: React.FC = () => {
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* 컬럼 헤더: 상점명 / 품목명 / 결제액 */}
+            <div className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700/60">
+              <span className="w-[28%] shrink-0 text-left">상점명</span>
+              <span className="flex-1 text-left px-1">품목명</span>
+              <span className="w-[28%] shrink-0 text-right">결제액</span>
             </div>
 
             <div className="space-y-1.5 my-1.5">
@@ -1294,14 +1838,26 @@ export const Screen3List: React.FC = () => {
                 <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                   품목 카테고리
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsAddCatDropdownOpen(!isAddCatDropdownOpen)}
-                  className="w-full px-3 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between border border-gray-200/50 dark:border-gray-600/50 transition-colors"
-                >
-                  <span>{CATEGORY_LABELS[newItemCategory]}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-200 ${isAddCatDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
+                <div className="flex gap-1.5 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCatDropdownOpen(!isAddCatDropdownOpen)}
+                    className="flex-1 px-3 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between border border-gray-200/50 dark:border-gray-600/50 transition-colors min-w-0"
+                  >
+                    <span className="truncate">{CATEGORY_LABELS[newItemCategory]}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-gray-500 shrink-0 transition-transform duration-200 ${isAddCatDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {newItemCategory === 'etc' && (
+                    <input
+                      type="text"
+                      maxLength={5}
+                      value={newItemCustomCategoryText}
+                      onChange={(e) => setNewItemCustomCategoryText(e.target.value.slice(0, 5))}
+                      placeholder="직접입력(5자)"
+                      className="w-[105px] shrink-0 px-2.5 py-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-blue-300 dark:border-blue-700 text-xs font-bold text-gray-800 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  )}
+                </div>
 
                 {isAddCatDropdownOpen && (
                   <>
@@ -1507,17 +2063,17 @@ export const Screen3List: React.FC = () => {
 
               <div>
                 <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  현지 세금 { (newItemCategory === 'restaurant' || newItemCategory === 'transportation') && <span className="text-rose-500 font-normal">(세금 입력 제외 대상)</span> }
+                  현지 세금 { isNonShoppingCategory(newItemCategory) && <span className="text-rose-500 font-normal">(세금 입력 제외 대상)</span> }
                 </label>
                 <input
                   type="number"
                   step="any"
-                  placeholder={newItemCategory === 'restaurant' || newItemCategory === 'transportation' ? "세금 제외 대상 (0원 처리)" : "0"}
-                  value={newItemCategory === 'restaurant' || newItemCategory === 'transportation' ? '' : newItemTax}
+                  placeholder={isNonShoppingCategory(newItemCategory) ? "세금 제외 대상 (0원 처리)" : "0"}
+                  value={isNonShoppingCategory(newItemCategory) ? '' : newItemTax}
                   onChange={(e) => setNewItemTax(e.target.value)}
-                  disabled={newItemCategory === 'restaurant' || newItemCategory === 'transportation'}
+                  disabled={isNonShoppingCategory(newItemCategory)}
                   className={`w-full px-3 py-2 rounded-xl border ${
-                    newItemCategory === 'restaurant' || newItemCategory === 'transportation'
+                    isNonShoppingCategory(newItemCategory)
                       ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700 cursor-not-allowed'
                       : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'
                   }`}
@@ -1600,7 +2156,7 @@ export const Screen3List: React.FC = () => {
                 }
 
                 const price = parseFloat(editPriceLocal) || 0;
-                const isTaxExcludedCategory = editCategory === 'restaurant' || editCategory === 'transportation';
+                const isTaxExcludedCategory = isNonShoppingCategory(editCategory);
                 const priceUSD = convertCurrencyToUSD(price, editCurrency);
 
                 const isPerfume = editCategory === 'perfume';
@@ -1614,6 +2170,7 @@ export const Screen3List: React.FC = () => {
                   ...editingItemData.item,
                   name: editName.trim(),
                   category: editCategory,
+                  customCategoryText: editCategory === 'etc' && editCustomCategoryText.trim() ? editCustomCategoryText.trim().slice(0, 5) : undefined,
                   priceLocal: price,
                   priceUSD: priceUSD,
                   currency: editCurrency,
@@ -1635,14 +2192,26 @@ export const Screen3List: React.FC = () => {
                 <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
                   품목 카테고리
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsEditCatDropdownOpen(!isEditCatDropdownOpen)}
-                  className="w-full px-3 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between border border-gray-200/50 dark:border-gray-600/50 transition-colors"
-                >
-                  <span>{CATEGORY_LABELS[editCategory]}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-200 ${isEditCatDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
+                <div className="flex gap-1.5 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditCatDropdownOpen(!isEditCatDropdownOpen)}
+                    className="flex-1 px-3 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between border border-gray-200/50 dark:border-gray-600/50 transition-colors min-w-0"
+                  >
+                    <span className="truncate">{CATEGORY_LABELS[editCategory]}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-gray-500 shrink-0 transition-transform duration-200 ${isEditCatDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {editCategory === 'etc' && (
+                    <input
+                      type="text"
+                      maxLength={5}
+                      value={editCustomCategoryText}
+                      onChange={(e) => setEditCustomCategoryText(e.target.value.slice(0, 5))}
+                      placeholder="직접입력(5자)"
+                      className="w-[105px] shrink-0 px-2.5 py-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-blue-300 dark:border-blue-700 text-xs font-bold text-gray-800 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  )}
+                </div>
 
                 {isEditCatDropdownOpen && (
                   <>
@@ -1846,17 +2415,17 @@ export const Screen3List: React.FC = () => {
 
               <div>
                 <label className="font-semibold text-gray-600 dark:text-gray-300 block mb-1">
-                  현지 세금 { (editCategory === 'restaurant' || editCategory === 'transportation') && <span className="text-rose-500 font-normal">(세금 입력 제외 대상)</span> }
+                  현지 세금 { isNonShoppingCategory(editCategory) && <span className="text-rose-500 font-normal">(세금 입력 제외 대상)</span> }
                 </label>
                 <input
                   type="number"
                   step="any"
-                  placeholder={editCategory === 'restaurant' || editCategory === 'transportation' ? "세금 제외 대상 (0원 처리)" : "0"}
-                  value={editCategory === 'restaurant' || editCategory === 'transportation' ? '' : editTaxLocal}
+                  placeholder={isNonShoppingCategory(editCategory) ? "세금 제외 대상 (0원 처리)" : "0"}
+                  value={isNonShoppingCategory(editCategory) ? '' : editTaxLocal}
                   onChange={(e) => setEditTaxLocal(e.target.value)}
-                  disabled={editCategory === 'restaurant' || editCategory === 'transportation'}
+                  disabled={isNonShoppingCategory(editCategory)}
                   className={`w-full px-3 py-2 rounded-xl border ${
-                    editCategory === 'restaurant' || editCategory === 'transportation'
+                    isNonShoppingCategory(editCategory)
                       ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700 cursor-not-allowed'
                       : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'
                   }`}
@@ -1974,10 +2543,11 @@ export const Screen3List: React.FC = () => {
         </div>
       )}
 
-      {/* 수기 등록 선택 시 뜨는 수기 입력 모달 */}
+      {/* 수기 등록 선택 시 뜨는 수기 입력 모달 (구매목록에서 진입 시 현재 선택된 여행폴더의 국가명 자동 세팅) */}
       <ManualReceiptModal
         isOpen={showDirectManualModal}
         onClose={() => setShowDirectManualModal(false)}
+        autoFillCountry={true}
       />
     </div>
   );

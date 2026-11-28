@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "면세비서",
-  "short_name": "면세비서",
+  "name": "여행비서",
+  "short_name": "여행비서",
   "description": "해외여행 AI 면세 계산 & 실시간 세금 예측 서비스",
   "start_url": "/",
   "scope": "/",

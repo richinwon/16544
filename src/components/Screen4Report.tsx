@@ -5,6 +5,7 @@ import { FolderSelect } from './FolderSelect';
 import { useScrollLock } from '../utils/useScrollLock';
 import { 
   ArrowLeft, 
+  PieChart,
   ShieldAlert, 
   ShieldCheck, 
   MessageCircle, 
@@ -232,7 +233,7 @@ export const Screen4Report: React.FC = () => {
 
     // 공유 대상의 채팅방에 면세리포트 페이지 내용이 깔끔하게 붙여넣기/렌더링되도록 정비된 포맷
     const formattedReportMessage = [
-      `📊 [면세비서] 면세 리포트 (${activeFolder})`,
+      `📊 [여행비서] 면세 리포트 (${activeFolder})`,
       `━━━━━━━━━━━━━━━━━━`,
       `■ 일반 면세한도 현황 (${statusText})`,
       `• 일반 구매액: $${formatUSD(duty.totalGeneralUSD)} / $800.00 (약 ${Math.round(duty.totalGeneralUSD * krwRate).toLocaleString()}원)`,
@@ -293,8 +294,8 @@ export const Screen4Report: React.FC = () => {
 
   return (
     <div className="p-2.5 sm:p-3 space-y-3 pb-28">
-      {/* Top Header with Folder Selection Dropdown on the left - 타이틀 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-1.5">
+      {/* Top Header - 모든 서브 화면 1px 오차 없이 통일 */}
+      <div className="relative flex items-center justify-center min-h-[36px] pt-1 px-16">
         <button
           onClick={() => {
             if (typeof window !== 'undefined' && window.location.search) {
@@ -302,12 +303,13 @@ export const Screen4Report: React.FC = () => {
             }
             setCurrentScreen(1);
           }}
-          className="absolute left-0 flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:hover:text-white"
+          className="absolute left-0 top-1 bottom-0 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white whitespace-nowrap shrink-0"
         >
-          <ArrowLeft className="w-4 h-4" /> 홈으로
+          <ArrowLeft className="w-4 h-4 shrink-0" /> 홈으로
         </button>
-        <h2 className="text-base font-extrabold text-gray-900 dark:text-white">
-          면세 리포트
+        <h2 className="text-[15px] sm:text-base font-extrabold text-gray-900 dark:text-white flex items-center justify-center gap-1.5 whitespace-nowrap">
+          <PieChart className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+          <span>면세 리포트</span>
         </h2>
       </div>
 
@@ -323,12 +325,12 @@ export const Screen4Report: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 rounded-3xl p-3.5 sm:p-4 border border-gray-100 dark:border-gray-700 shadow-xs space-y-2.5">
           <div className="flex justify-between items-start gap-2">
             <div className="flex-1 min-w-0">
-              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 block">일반 면세한도 현황</span>
+              <h3 className="text-[13px] sm:text-sm font-extrabold text-gray-800 dark:text-gray-100 block">일반 면세한도 현황</h3>
               <div className="flex items-baseline gap-1.5 mt-1 whitespace-nowrap overflow-visible">
                 <span className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">
                   ${formatUSD(duty.totalGeneralUSD)}
                 </span>
-                <span className="text-xs sm:text-sm font-bold text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                <span className="text-xs sm:text-sm font-bold text-gray-400 dark:text-gray-500 whitespace-nowrap tracking-normal">
                   / $800.00
                 </span>
               </div>
@@ -373,7 +375,7 @@ export const Screen4Report: React.FC = () => {
         {/* Card 2: Separate Limits Badges (주류 / 담배 / 향수) */}
         <div className="bg-white dark:bg-gray-800 rounded-3xl p-3 sm:p-4 border border-gray-100 dark:border-gray-700 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold text-gray-700 dark:text-gray-300">별도 면세한도 현황</h3>
+            <h3 className="text-[13px] sm:text-sm font-extrabold text-gray-800 dark:text-gray-100">별도 면세한도 현황</h3>
             <span className="text-[10px] text-gray-400">일반한도 $800 제외 · 독립 과세</span>
           </div>
 
@@ -460,7 +462,7 @@ export const Screen4Report: React.FC = () => {
         }`}>
           <div>
             <div className="flex justify-between items-center gap-1.5">
-              <h3 className="text-sm sm:text-base font-extrabold text-gray-900 dark:text-white truncate">
+              <h3 className="text-[13px] sm:text-sm font-extrabold text-gray-800 dark:text-gray-100 truncate">
                 예상 세금 및 추징금 산출내역
               </h3>
 
@@ -474,7 +476,7 @@ export const Screen4Report: React.FC = () => {
               </button>
             </div>
 
-            {/* 과세대상 좌측 배치 & 별도한도 초과 과세 우측 이동 정렬 */}
+            {/* 과세대상 좌측 배치 (우측 한도초과 표시 완전 삭제) */}
             <div className="flex items-center justify-between gap-1.5 mt-2 pt-1.5 border-t border-gray-100 dark:border-gray-700/60">
               <div className="text-left min-w-0">
                 <span className={`text-xs sm:text-sm px-2.5 py-1 rounded-xl font-extrabold inline-flex items-center gap-1 shadow-xs whitespace-nowrap max-w-full truncate ${
@@ -485,18 +487,12 @@ export const Screen4Report: React.FC = () => {
                   과세대상: ${formatUSD(duty.taxableUSD)} ({duty.taxableKRW.toLocaleString()}원)
                 </span>
               </div>
-
-              {duty.hasAnyTaxableExceed && !duty.isOverLimit && (
-                <span className="px-2 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 text-xs sm:text-sm font-extrabold shrink-0 whitespace-nowrap">
-                  별도한도 초과 과세
-                </span>
-              )}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
             {/* Box A: 자진 신고 시 (관세 30% 감면) */}
-            <div className="p-2.5 sm:p-3 rounded-2xl bg-gradient-to-b from-blue-50/80 to-indigo-50/40 dark:from-blue-950/40 dark:to-indigo-950/20 border border-blue-200/80 dark:border-blue-800 space-y-1.5 min-w-0">
+            <div className="px-2 py-2.5 sm:p-3 rounded-2xl bg-gradient-to-b from-blue-50/80 to-indigo-50/40 dark:from-blue-950/40 dark:to-indigo-950/20 border border-blue-200/80 dark:border-blue-800 space-y-1.5 min-w-0">
               <div className="flex items-center gap-1 text-blue-700 dark:text-blue-300">
                 <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                 <span className="text-xs sm:text-sm font-extrabold truncate">자진 신고 시</span>
@@ -513,10 +509,8 @@ export const Screen4Report: React.FC = () => {
                   ≈ ${formatUSD(duty.voluntaryTaxUSD)}
                 </p>
               </div>
-              <div className="text-xs sm:text-[13px] font-bold text-blue-600 dark:text-blue-400 pt-1 border-t border-blue-200/50 dark:border-blue-900/50 truncate">
-                {duty.isDiscountCapped 
-                  ? '감면 한도 20만원 상한 적용' 
-                  : `감면액 -${duty.voluntaryDiscountKRW.toLocaleString()}원`}
+              <div className="text-[11px] sm:text-xs font-bold text-blue-600 dark:text-blue-400 pt-1 border-t border-blue-200/50 dark:border-blue-900/50 whitespace-nowrap tracking-tight">
+                {`감면액 -${duty.voluntaryDiscountKRW.toLocaleString()}원 반영`}
               </div>
             </div>
 
@@ -606,7 +600,7 @@ export const Screen4Report: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2.5 leading-snug text-left px-0 break-keep">
-              <strong>[{selectedFolder}]</strong>의 기본 면세한도($800) 및 별도 면세한도<span className="inline-block">(주류·담배·향수)</span> 독립 과세 규정을 적용한 상세 산출표입니다.
+              <strong>[{selectedFolder}]</strong>의 일반 면세한도($800) 및 별도 면세한도<span className="inline-block">(주류·담배·향수)</span> 독립 과세 규정을 적용한 상세 산출표입니다.
             </p>
 
             {/* Summary Formula Box (2) 총과세대상금액 박스 영역: 좌측 설명부 / 우측 금액 */}
@@ -646,7 +640,7 @@ export const Screen4Report: React.FC = () => {
 
               {duty.categoryDetails.length === 0 ? (
                 <div className="p-3 text-center text-xs text-gray-400 bg-gray-50 dark:bg-gray-900/40 rounded-2xl">
-                  기본 면세한도($800) 및 별도 면세한도<span className="inline-block">(주류·담배·향수)</span> 범위 내이므로 산출된 세액이 없습니다.
+                  일반 면세한도($800) 및 별도 면세한도<span className="inline-block">(주류·담배·향수)</span> 범위 내이므로 산출된 세액이 없습니다.
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -699,7 +693,7 @@ export const Screen4Report: React.FC = () => {
                           </div>
                         )}
                         <div className="flex justify-between items-center gap-2 text-[11px] font-semibold text-gray-800 dark:text-gray-200 pt-1 border-t border-gray-200/60 dark:border-gray-800">
-                          <span className="shrink-0">기본 산출세액</span>
+                          <span className="shrink-0">산출세액</span>
                           <span className="text-gray-900 dark:text-white font-extrabold text-right">
                             <span className="inline-block">{detail.baseTaxKRW.toLocaleString()}원</span>{' '}
                             <span className="inline-block">(${formatUSD(detail.calculatedTaxUSD)})</span>
@@ -723,7 +717,7 @@ export const Screen4Report: React.FC = () => {
             {/* Voluntary vs Penalty summary */}
             <div className="p-2.5 rounded-2xl bg-blue-50/60 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 space-y-1 text-[11px] text-left">
               <div className="flex justify-between items-center gap-2 font-bold text-blue-950 dark:text-blue-200">
-                <span className="shrink-0">기본 산출세액 총합</span>
+                <span className="shrink-0">산출세액 총합</span>
                 <span className="text-right">
                   <span className="inline-block">{duty.baseTaxKRW.toLocaleString()}원</span>{' '}
                   <span className="inline-block">(${formatUSD(duty.baseTaxUSD)})</span>
@@ -744,7 +738,7 @@ export const Screen4Report: React.FC = () => {
                 </span>
               </div>
               <div className="flex justify-between items-center gap-2 text-rose-600 dark:text-rose-400 pt-1 border-t border-blue-200/60 dark:border-blue-800/60">
-                <span className="shrink-0">미신고 가산세 <span className="inline-block">(기본세액의 40%)</span></span>
+                <span className="shrink-0">미신고 가산세 <span className="inline-block">(산출세액의 40%)</span></span>
                 <span className="font-bold text-right">+{duty.penaltySurchargeKRW.toLocaleString()}원</span>
               </div>
               <div className="flex justify-between items-center gap-2 text-rose-700 dark:text-rose-300 font-extrabold">

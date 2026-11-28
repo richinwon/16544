@@ -6,15 +6,30 @@ import { ChevronDown, Check, Folder } from 'lucide-react';
 interface FolderSelectProps {
   className?: string;
   showIcon?: boolean;
+  theme?: 'blue' | 'emerald' | 'purple';
 }
 
-export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', showIcon = true }) => {
+export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', showIcon = true, theme = 'blue' }) => {
   const { folders, selectedFolder, setSelectedFolder } = useApp();
   const [isOpen, setIsOpen] = useState(false);
 
   useScrollLock(isOpen);
 
   if (folders.length === 0) return null;
+
+  const iconColorClass =
+    theme === 'emerald'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : theme === 'purple'
+      ? 'text-[#724bb7] dark:text-[#b79cf0]'
+      : 'text-blue-600 dark:text-blue-400';
+
+  const selectedItemClass =
+    theme === 'emerald'
+      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 font-bold'
+      : theme === 'purple'
+      ? 'bg-[#f1ecfc] text-[#6741ac] dark:bg-[#332652] dark:text-[#c9b3f9] font-bold'
+      : 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 font-bold';
 
   return (
     <div className={`relative inline-flex items-center ${className}`}>
@@ -24,7 +39,7 @@ export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', show
         className="px-2.5 py-1.5 rounded-xl bg-white/95 hover:bg-white dark:bg-gray-800 dark:hover:bg-gray-750 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between gap-1.5 border border-gray-200/80 dark:border-gray-700 shadow-xs transition-colors"
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          {showIcon && <Folder className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+          {showIcon && <Folder className={`w-3.5 h-3.5 ${iconColorClass} shrink-0`} />}
           <span className="truncate max-w-[130px] sm:max-w-[160px]">{selectedFolder}</span>
         </div>
         <ChevronDown className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -51,15 +66,15 @@ export const FolderSelect: React.FC<FolderSelectProps> = ({ className = '', show
                   }}
                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold transition-all ${
                     isSelected
-                      ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 font-bold'
+                      ? selectedItemClass
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 truncate mr-2">
-                    <Folder className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} />
+                    <Folder className={`w-3.5 h-3.5 shrink-0 ${isSelected ? iconColorClass : 'text-gray-400'}`} />
                     <span className="truncate">{folder}</span>
                   </div>
-                  {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-1" />}
+                  {isSelected && <Check className={`w-3.5 h-3.5 ${iconColorClass} flex-shrink-0 ml-1`} />}
                 </button>
               );
             })}

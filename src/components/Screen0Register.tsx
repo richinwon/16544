@@ -379,7 +379,7 @@ export const Screen0Register: React.FC = () => {
           </div>
         </div>
         <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-          면세비서
+          여행비서
         </h1>
         {/* 요청사항: 해외여행필수품 / 스마트 AI 면세 계산 & 실시간 세금 예측 서비스 */}
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-xs font-medium whitespace-pre-line leading-relaxed">

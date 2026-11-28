@@ -1,5 +1,5 @@
 import type { ProductItem, ProductCategory } from '../types';
-import { CATEGORY_TAX_RATES, CATEGORY_LABELS } from '../types';
+import { CATEGORY_TAX_RATES, CATEGORY_LABELS, isNonShoppingCategory } from '../types';
 
 export interface CategoryDutyDetail {
   category: ProductCategory;
@@ -286,8 +286,8 @@ export function calculateDuty(
   }> = [];
 
   items.forEach((item) => {
-    // excludedFromDuty 체크 시 또는 카테고리가 '음식점'/'교통비'인 경우 면세 한도 및 과세 산출에서 완전히 제외
-    if (item.excludedFromDuty || item.category === 'restaurant' || item.category === 'transportation') {
+    // excludedFromDuty 체크 시 또는 비쇼핑 5개 항목('식비', '교통비', '숙박비', '액티비티', '기타')인 경우 면세 한도 및 과세 산출에서 완전히 제외
+    if (item.excludedFromDuty || isNonShoppingCategory(item.category)) {
       return;
     }
 

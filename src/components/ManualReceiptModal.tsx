@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { ProductCategory, ProductItem, Receipt } from '../types';
-import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName, cleanStoreName } from '../types';
+import { CATEGORY_LABELS, CATEGORY_ORDER, generateFolderName, parseFolderName, cleanStoreName, isNonShoppingCategory } from '../types';
 import { ChevronDown, Check, Plus, Minus, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { CustomDatePicker } from './CustomDatePicker';
 import { useScrollLock } from '../utils/useScrollLock';
@@ -10,9 +10,10 @@ interface ManualReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  autoFillCountry?: boolean; // 구매목록에서 진입 시 선택된 여행폴더의 국가명 자동 세팅 여부
 }
 
-export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, onClose, onSuccess, autoFillCountry = false }) => {
   const { 
     addReceipt, 
     convertCurrencyToUSD, 
@@ -31,6 +32,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
   const [manualStore, setManualStore] = useState('');
   const [manualItemName, setManualItemName] = useState('');
   const [manualCategory, setManualCategory] = useState<ProductCategory>('cosmetics_general');
+  const [manualCustomCategoryText, setManualCustomCategoryText] = useState('');
   const [manualPriceLocal, setManualPriceLocal] = useState('');
   const [manualTaxLocal, setManualTaxLocal] = useState('');
   const [manualCurrency, setManualCurrency] = useState<'USD' | 'KRW' | 'JPY' | 'EUR' | 'CNY'>('JPY');
@@ -105,7 +107,8 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
       const finalCity = initialCity || '';
       const finalDate = initialDate || new Date().toISOString().split('T')[0];
 
-      setManualCountry('');
+      // 구매목록 화면에서 [영수증 추가]를 통해 진입한 경우 선택된 여행 폴더의 국가명 자동 세팅
+      setManualCountry(autoFillCountry ? finalCountry : '');
       setManualCity(finalCity);
       setManualDate(finalDate);
 
@@ -124,19 +127,20 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
 
       setManualQuantity(1);
       setManualPerfumeMl(50);
+      setManualCustomCategoryText('');
       setManualItemName('');
       setManualPriceLocal('');
       setManualTaxLocal('');
       setManualStore('');
     }
-  }, [isOpen, selectedFolder, tripCountry, tripCity, tripDate]);
+  }, [isOpen, selectedFolder, tripCountry, tripCity, tripDate, autoFillCountry]);
 
   if (!isOpen) return null;
 
   const isPerfume = manualCategory === 'perfume';
   const isLiquor = manualCategory === 'liquor';
   const isTobacco = manualCategory === 'tobacco';
-  const isTaxExcludedCategory = manualCategory === 'restaurant' || manualCategory === 'transportation';
+  const isTaxExcludedCategory = isNonShoppingCategory(manualCategory);
 
   // 저장될 여행 폴더명 계산
   const targetFolder = generateFolderName(manualDate, manualCountry, manualCity);
@@ -202,6 +206,7 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
       id: 'manual-item-' + Date.now(),
       name: manualItemName.trim(),
       category: manualCategory,
+      customCategoryText: manualCategory === 'etc' && manualCustomCategoryText.trim() ? manualCustomCategoryText.trim().slice(0, 5) : undefined,
       priceLocal: price,
       currency: manualCurrency,
       priceUSD: priceUSD,
@@ -354,14 +359,26 @@ export const ManualReceiptModal: React.FC<ManualReceiptModalProps> = ({ isOpen, 
             <label className="text-xs font-semibold text-gray-600 dark:text-gray-300 block mb-1">
               품목 카테고리 (세율 적용) *
             </label>
-            <button
-              type="button"
-              onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
-              className="w-full px-3 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between border border-gray-200/50 dark:border-gray-600/50 transition-colors"
-            >
-              <span>{CATEGORY_LABELS[manualCategory]}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
+            <div className="flex gap-1.5 items-center">
+              <button
+                type="button"
+                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                className="flex-1 px-3 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-bold text-xs text-gray-800 dark:text-white flex items-center justify-between border border-gray-200/50 dark:border-gray-600/50 transition-colors min-w-0"
+              >
+                <span className="truncate">{CATEGORY_LABELS[manualCategory]}</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-500 shrink-0 transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {manualCategory === 'etc' && (
+                <input
+                  type="text"
+                  maxLength={5}
+                  value={manualCustomCategoryText}
+                  onChange={(e) => setManualCustomCategoryText(e.target.value.slice(0, 5))}
+                  placeholder="직접입력(5자)"
+                  className="w-[105px] shrink-0 px-2.5 py-2.5 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-blue-300 dark:border-blue-700 text-xs font-bold text-gray-800 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              )}
+            </div>
 
             {isCategoryDropdownOpen && (
               <>

@@ -42,7 +42,11 @@ const VALID_CATEGORIES: ProductCategory[] = [
   'tobacco',
   'perfume',
   'restaurant',
+  'food',
   'transportation',
+  'accommodation',
+  'activity',
+  'etc',
 ];
 
 /**
@@ -178,6 +182,9 @@ async function prepareImageForGemini(imageSrc: string): Promise<{ mimeType: stri
  * 품목명 및 Gemini 분류값을 바탕으로 앱 표준 ProductCategory 매핑
  */
 function resolveCategory(rawCategory: string | null | undefined, itemName: string): ProductCategory {
+  if (rawCategory === 'food' || rawCategory === '음식점' || rawCategory === '식비') {
+    return 'restaurant';
+  }
   if (rawCategory && VALID_CATEGORIES.includes(rawCategory as ProductCategory)) {
     return rawCategory as ProductCategory;
   }
@@ -214,6 +221,12 @@ function resolveCategory(rawCategory: string | null | undefined, itemName: strin
   }
   if (/택시|전철|지하철|버스|기차|신칸센|교통|우버|항공|열차|taxi|train|bus|subway|uber|metro|transport/i.test(lowerName)) {
     return 'transportation';
+  }
+  if (/호텔|숙박|리조트|료칸|게스트하우스|에어비앤비|모텔|호스텔|hotel|resort|inn|hostel|lodging|airbnb/i.test(lowerName)) {
+    return 'accommodation';
+  }
+  if (/입장권|티켓|투어|박물관|미술관|테마파크|디즈니|유니버설|전망대|액티비티|체험|ticket|tour|museum|park|activity/i.test(lowerName)) {
+    return 'activity';
   }
   return 'cosmetics_general';
 }

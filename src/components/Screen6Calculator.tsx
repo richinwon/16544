@@ -112,18 +112,18 @@ export const Screen6Calculator: React.FC = () => {
   const krwAmount = Math.round(usdAmount * krwRate);
 
   return (
-    <div className="p-2 sm:p-2.5 space-y-2.5 pb-24">
-      {/* Top Header - 정가운데 정렬 */}
-      <div className="relative flex items-center justify-center pt-1">
+    <div className="p-2.5 sm:p-3 space-y-2.5 pb-24">
+      {/* Top Header - 모든 서브 화면 1px 오차 없이 통일 */}
+      <div className="relative flex items-center justify-center min-h-[36px] pt-1 px-16">
         <button
           onClick={() => setCurrentScreen(1)}
-          className="absolute left-0 flex items-center gap-1 text-xs sm:text-sm font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white whitespace-nowrap"
+          className="absolute left-0 top-1 bottom-0 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white whitespace-nowrap shrink-0"
         >
-          <ArrowLeft className="w-4 h-4" /> 홈으로
+          <ArrowLeft className="w-4 h-4 shrink-0" /> 홈으로
         </button>
-        <h2 className="text-base sm:text-lg font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5 whitespace-nowrap">
+        <h2 className="text-[15px] sm:text-base font-extrabold text-gray-900 dark:text-white flex items-center justify-center gap-1.5 whitespace-nowrap">
           <Coins className="w-4 h-4 text-amber-500 shrink-0" />
-          실시간 환율계산기
+          <span>실시간 환율계산기</span>
         </h2>
       </div>
 
@@ -149,7 +149,7 @@ export const Screen6Calculator: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="w-full h-[46px] px-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-extrabold text-xs sm:text-sm text-gray-800 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors box-border"
+                className="w-full h-[46px] px-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200/80 dark:bg-gray-700 dark:hover:bg-gray-650 font-black text-base text-gray-900 dark:text-white flex items-center justify-between gap-1 border border-gray-200/50 dark:border-gray-600/50 transition-colors box-border"
               >
                 <span className="truncate whitespace-nowrap">{baseCurrency} ({CURRENCY_INFO[baseCurrency]?.symbol})</span>
                 <ChevronDown className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
